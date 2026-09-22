@@ -18,6 +18,7 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0a0a0a',
+    icon: join(app.getAppPath(), 'resources', 'icon.png'),
     ...(process.platform === 'darwin'
       ? ({ titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 16 } } as const)
       : {}),
