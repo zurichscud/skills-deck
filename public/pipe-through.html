@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pipeThrough — Web Streams 管道工作示意图</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Saira+Stencil+One&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#080B0F; --ink-2:#0D1218; --panel:#111820;
+  --steel:#1B2530; --steel-2:#243140; --steel-3:#334456;
+  --line:#2B3A4B; --line-2:#3D5165;
+  --fog:#6E8093; --fog-2:#93A6B8; --bone:#E4ECF3;
+  --amber:#FFB01F; --amber-2:#FF8A00; --amber-d:#7A4A00;
+  --verd:#C6F24E; --verd-d:#4E6A10;
+  --cyan:#37E0FF; --cyan-2:#00C2E8; --cyan-d:#0A4A5C;
+  --furnace:#FF6B2C; --hot:#7DF9FF; --alarm:#FF4D6D;
+  --mono:"IBM Plex Mono","PingFang SC","Noto Sans SC","Microsoft YaHei",ui-monospace,monospace;
+  --stencil:"Saira Stencil One","PingFang SC",Impact,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--ink)}
+body{
+  font-family:var(--mono); color:var(--bone);
+  background:
+    radial-gradient(1100px 620px at 12% 42%, rgba(255,176,31,.10), transparent 62%),
+    radial-gradient(1000px 620px at 88% 46%, rgba(55,224,255,.10), transparent 62%),
+    radial-gradient(1600px 900px at 50% 0%, rgba(35,55,80,.35), transparent 70%),
+    var(--ink);
+  width:100%; position:relative;
+}
+body::after{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:900;
+  opacity:.5;
+  background-image:repeating-linear-gradient(0deg, rgba(255,255,255,.022) 0 1px, transparent 1px 3px);
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:899;
+  background:radial-gradient(130% 100% at 50% 45%, transparent 55%, rgba(0,0,0,.55) 100%);
+}
+.shell{width:100%;padding:26px clamp(16px,2.2vw,48px) 64px;position:relative;z-index:1}
+
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--line); padding-bottom:12px; margin-bottom:26px;
+  font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--fog);
+}
+.topbar .brand{display:flex;align-items:center;gap:14px;color:var(--fog-2)}
+.topbar .brand b{color:var(--amber);font-weight:600;letter-spacing:.28em}
+.topbar .brand .sep{color:var(--line-2)}
+.topbar .meta{display:flex;gap:22px;align-items:center}
+.lamp{display:inline-flex;align-items:center;gap:7px;color:var(--fog);letter-spacing:.18em}
+.lamp i{width:8px;height:8px;border-radius:50%;background:var(--verd);box-shadow:0 0 10px var(--verd);animation:blink 2.4s ease-in-out infinite}
+.lamp.warn i{background:var(--alarm);box-shadow:0 0 10px var(--alarm)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.28}}
+
+.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:clamp(20px,3vw,48px);margin-bottom:22px;flex-wrap:wrap}
+.hero h1{font-family:var(--stencil);font-size:clamp(56px,7.4vw,124px);line-height:.84;letter-spacing:.01em;color:var(--bone);overflow:hidden}
+.hero h1 em{font-style:normal;color:var(--amber);text-shadow:0 0 34px rgba(255,176,31,.45)}
+.hero h1 .ln-a,.hero h1 .ln-b{display:inline-block}
+.hero .sub{margin-top:16px;font-size:13px;letter-spacing:.16em;color:var(--fog-2);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.chip{
+  display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line-2);
+  background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(0,0,0,.2));
+  padding:6px 12px;border-radius:3px;font-size:12px;letter-spacing:.06em;color:var(--bone);
+}
+.chip.cyan{border-color:var(--cyan-d);color:var(--cyan);box-shadow:0 0 18px rgba(55,224,255,.12) inset}
+.chip.amber{border-color:var(--amber-d);color:var(--amber);box-shadow:0 0 18px rgba(255,176,31,.12) inset}
+.hero .eq{
+  flex:1 1 380px; max-width:560px; border-left:2px solid var(--cyan);padding:12px 0 12px 18px;
+  font-size:12.5px;line-height:1.85;color:var(--fog-2);
+}
+.hero .eq b{color:var(--bone);font-weight:600}
+.hero .eq code{color:var(--cyan);background:rgba(55,224,255,.08);padding:1px 6px;border-radius:2px}
+
+.stage{
+  position:relative;border:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent 30%),var(--ink-2);
+  border-radius:4px;overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.02) inset;
+}
+.stage-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 18px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.035),transparent);
+  font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--fog);
+}
+.stage-head .title{color:var(--fog-2)}
+.stage-head .title b{color:var(--bone);font-weight:600}
+.legend{display:flex;gap:20px;align-items:center}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.legend i{width:14px;height:4px;border-radius:2px;display:inline-block}
+.legend i.a{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.legend i.b{background:var(--furnace);box-shadow:0 0 8px var(--furnace)}
+.legend i.c{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+
+svg#stage{display:block;width:100%;height:auto}
+svg text{font-family:var(--mono);user-select:none}
+
+.pipe-body{fill:none;stroke:#0A0F14;stroke-width:20;stroke-linecap:round}
+.pipe-shell{fill:none;stroke:url(#pipeGrad);stroke-width:15;stroke-linecap:round}
+.pipe-bore{fill:none;stroke:#050A0E;stroke-width:8;stroke-linecap:round}
+.pipe-flow{
+  fill:none;stroke-width:3.4;stroke-linecap:round;stroke-dasharray:4 16;
+  animation:dash 1.1s linear infinite;opacity:.55;transition:opacity .3s,stroke-width .3s;
+}
+.pipe-flow.hot{opacity:1;stroke-width:4.2;animation-duration:.5s}
+@keyframes dash{to{stroke-dashoffset:-40}}
+.pipe-glow{fill:none;stroke-width:22;stroke-linecap:round;opacity:0;transition:opacity .35s;filter:url(#glowSoft)}
+.pipe-glow.hot{opacity:.3;stroke-width:18}
+
+.flange{fill:url(#steel);stroke:var(--line-2);stroke-width:1.4}
+.flange-bolt{fill:#0B1219;stroke:var(--line-2);stroke-width:1}
+.housing{fill:url(#steel);stroke:var(--line-2);stroke-width:1.6}
+.housing-in{fill:#0B1118;stroke:var(--line);stroke-width:1.2}
+.header-bar{fill:url(#steelTop);stroke:var(--line-2);stroke-width:1.2}
+.bay{fill:#0A1016;stroke:var(--line);stroke-width:1.2}
+.bay-slot{fill:#050A0E;stroke:#000;stroke-width:1}
+.rivet{fill:#0C131A;stroke:var(--line-2);stroke-width:.9;opacity:.9}
+.t-title{fill:var(--bone);font-size:14.5px;font-weight:600;letter-spacing:.06em}
+.t-sub{fill:var(--fog);font-size:10.5px;letter-spacing:.14em}
+.t-label{fill:var(--fog);font-size:10px;letter-spacing:.16em}
+.t-code{fill:var(--fog-2);font-size:11px;letter-spacing:.02em}
+.t-glyph{font-family:var(--stencil);font-size:26px;fill:#120600}
+.kernel-ring{fill:none;stroke-width:9}
+.kernel-face{fill:none;stroke:rgba(0,0,0,.45);stroke-width:2}
+.gear-tooth{stroke:none}
+.kernel-halo{opacity:.35;transition:opacity .3s}
+.busy .kernel-halo{opacity:.95}
+.led{stroke:#000;stroke-width:1.2}
+.led-on{filter:url(#glowSoft)}
+.pk-body{stroke-width:1.6}
+.pk-type{font-size:8.5px;letter-spacing:.18em;font-weight:600}
+.pk-val{font-size:12.5px;font-weight:600;letter-spacing:.01em}
+.packet{transition:opacity .35s}
+.packet.vanish{opacity:0}
+.anno-line{fill:none;stroke:var(--line-2);stroke-width:1.1;stroke-dasharray:3 4}
+.anno-brk{fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.anno-text{font-size:11.5px;letter-spacing:.1em}
+.anno-text.sm{font-size:10px;letter-spacing:.16em}
+.dim-line{stroke:var(--line);stroke-width:1}
+.dim-tick{stroke:var(--line-2);stroke-width:1.2}
+.dim-text{fill:var(--fog);font-size:10.5px;letter-spacing:.22em}
+.dim-text.hi{fill:var(--fog-2)}
+.callout{fill:rgba(13,18,24,.92);stroke:var(--cyan-d);stroke-width:1.3}
+.callout-t{fill:var(--bone);font-size:12px;letter-spacing:.04em}
+.callout-t.c{fill:var(--cyan)}
+.leader{fill:none;stroke:var(--cyan-d);stroke-width:1.2;stroke-dasharray:2 4}
+.dial-face{fill:#080D12;stroke:var(--line-2);stroke-width:1.4}
+.dial-tick{stroke:var(--line-2);stroke-width:1.4}
+.dial-tick.red{stroke:var(--alarm)}
+.dial-needle{stroke:var(--amber);stroke-width:2;stroke-linecap:round;filter:url(#glowSoft)}
+.dial-needle.hi{stroke:var(--alarm)}
+.dial-hub{fill:var(--steel-3);stroke:#000;stroke-width:1}
+.dial-t{fill:var(--fog);font-size:8px;letter-spacing:.2em}
+.grid-bg{opacity:.5}
+.spec-text{fill:#111B26;font-family:var(--stencil);font-size:54px;letter-spacing:.04em}
+.hazard-band{stroke:none}
+
+.console{display:grid;grid-template-columns:minmax(300px,1fr) minmax(380px,1.45fr) minmax(290px,1fr);gap:16px;margin-top:16px}
+.panel{
+  border:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent 40%),var(--panel);
+  border-radius:4px;display:flex;flex-direction:column;
+  box-shadow:0 16px 40px rgba(0,0,0,.35);min-height:330px;
+}
+.panel-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 14px;border-bottom:1px solid var(--line);
+  font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--fog);
+}
+.panel-head b{color:var(--fog-2);font-weight:600}
+.panel-body{padding:14px;flex:1}
+
+.ctl-row{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.btn{
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--bone);background:linear-gradient(180deg,var(--steel-2),var(--steel));
+  border:1px solid var(--line-2);border-radius:3px;padding:9px 16px;cursor:pointer;transition:.18s;
+}
+.btn:hover{border-color:var(--amber);color:var(--amber);box-shadow:0 0 18px rgba(255,176,31,.15)}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:linear-gradient(180deg,#FFC44A,var(--amber-2));border-color:#FFD27A;color:#1A1000;font-weight:700}
+.btn.primary:hover{box-shadow:0 0 26px rgba(255,176,31,.5);color:#000}
+.btn.on{border-color:var(--verd);color:var(--verd);box-shadow:0 0 18px rgba(198,242,78,.18)}
+.btn.ghost{background:transparent}
+.btn.danger:hover{border-color:var(--alarm);color:var(--alarm);box-shadow:0 0 18px rgba(255,77,109,.18)}
+.slider-wrap{
+  display:flex;align-items:center;gap:12px;flex:1;min-width:220px;
+  border:1px solid var(--line);border-radius:3px;padding:7px 12px;background:rgba(0,0,0,.22);
+}
+.slider-wrap label{font-size:10px;letter-spacing:.2em;color:var(--fog);text-transform:uppercase;white-space:nowrap}
+input[type=range]{
+  -webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:2px;
+  background:linear-gradient(90deg,var(--amber),var(--cyan));outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;
+  background:var(--bone);border:2px solid var(--ink);box-shadow:0 0 10px rgba(228,236,243,.6);cursor:pointer;
+}
+.speed-val{font-size:11.5px;color:var(--cyan);min-width:44px;text-align:right;letter-spacing:.06em}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px}
+.stat{border:1px solid var(--line);border-radius:3px;padding:11px 12px;background:rgba(0,0,0,.24)}
+.stat .k{font-size:9.5px;letter-spacing:.2em;color:var(--fog);text-transform:uppercase}
+.stat .v{font-size:26px;font-weight:600;margin-top:5px;letter-spacing:.02em}
+.stat.a .v{color:var(--amber)}
+.stat.b .v{color:var(--furnace)}
+.stat.c .v{color:var(--cyan)}
+.pipe-eq{
+  margin-top:14px;border:1px solid var(--line);border-left:3px solid var(--amber);
+  background:rgba(255,176,31,.05);border-radius:3px;padding:12px 14px;
+  font-size:12px;line-height:1.9;color:var(--fog-2);
+}
+.pipe-eq code{color:var(--bone)}
+.pipe-eq .g{color:var(--verd)}
+.pipe-eq .a{color:var(--amber)}
+.pipe-eq .c{color:var(--cyan)}
+
+.code{
+  font-family:var(--mono);font-size:12px;line-height:1.85;
+  background:#070B0F;border:1px solid var(--line);border-radius:3px;
+  padding:10px 0;overflow:auto;flex:1;
+}
+.cl{
+  display:flex;gap:0;padding:0 10px 0 0;border-left:2px solid transparent;
+  transition:background .2s,border-color .2s;white-space:pre;
+}
+.cl .ln{width:38px;flex:none;text-align:right;padding-right:14px;color:#33455A;user-select:none}
+.cl .tx{color:#A9BACC}
+.cl .token.comment,.cl .token.prolog,.cl .token.doctype,.cl .token.cdata{color:#4E657A}
+.cl .token.punctuation{color:#6E8093}
+.cl .token.property,.cl .token.tag,.cl .token.constant,.cl .token.symbol,.cl .token.deleted{color:var(--furnace)}
+.cl .token.boolean,.cl .token.number{color:var(--amber)}
+.cl .token.selector,.cl .token.attr-name,.cl .token.string,.cl .token.char,.cl .token.builtin,.cl .token.inserted{color:var(--verd)}
+.cl .token.operator,.cl .token.entity,.cl .token.url{color:#93A6B8}
+.cl .token.atrule,.cl .token.attr-value,.cl .token.keyword{color:var(--furnace)}
+.cl .token.function,.cl .token.class-name{color:var(--cyan)}
+.cl .token.regex,.cl .token.important,.cl .token.variable{color:var(--hot)}
+.cl.hot{background:linear-gradient(90deg,rgba(255,176,31,.14),rgba(255,176,31,.02));border-left-color:var(--amber)}
+.cl.hot2{background:linear-gradient(90deg,rgba(55,224,255,.14),rgba(55,224,255,.02));border-left-color:var(--cyan)}
+.cl.hot .tx,.cl.hot2 .tx{color:var(--bone)}
+
+.log{
+  flex:1;overflow:auto;background:#070B0F;border:1px solid var(--line);border-radius:3px;
+  padding:8px 0;font-size:11px;line-height:1.7;
+}
+.lg{display:flex;gap:10px;padding:2px 12px;white-space:nowrap}
+.lg .ts{color:#3B4E63;flex:none}
+.lg .tg{flex:none;font-weight:600;letter-spacing:.06em}
+.lg .ms{color:var(--fog-2);overflow:hidden;text-overflow:ellipsis}
+.lg.src .tg{color:var(--amber)}
+.lg.t1 .tg{color:var(--furnace)}
+.lg.t2 .tg{color:var(--hot)}
+.lg.ret .tg{color:var(--cyan)}
+.lg.sink .tg{color:var(--verd)}
+.lg.warn .tg{color:var(--alarm)}
+.lg.warn .ms{color:var(--alarm)}
+
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin-top:16px}
+.note{
+  border:1px solid var(--line);border-radius:4px;
+  background:linear-gradient(180deg,rgba(255,255,255,.035),transparent 50%),var(--panel);
+  padding:20px 20px 22px;position:relative;overflow:hidden;
+}
+.note::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
+.note.n1::before{background:var(--amber);box-shadow:0 0 16px var(--amber)}
+.note.n2::before{background:var(--furnace);box-shadow:0 0 16px var(--furnace)}
+.note.n3::before{background:var(--hot);box-shadow:0 0 16px var(--hot)}
+.note.n4::before{background:var(--cyan);box-shadow:0 0 16px var(--cyan)}
+.note .num{font-family:var(--stencil);font-size:34px;line-height:1;color:rgba(228,236,243,.10);position:absolute;right:14px;top:12px}
+.note h3{font-family:var(--mono);font-size:13px;letter-spacing:.1em;margin-bottom:10px;font-weight:600}
+.note.n1 h3{color:var(--amber)}
+.note.n2 h3{color:var(--furnace)}
+.note.n3 h3{color:var(--hot)}
+.note.n4 h3{color:var(--cyan)}
+.note p{font-size:12px;line-height:1.85;color:var(--fog-2)}
+.note code{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.05);padding:1px 5px;border-radius:2px;color:var(--bone)}
+
+.footer{
+  margin-top:28px;padding-top:14px;border-top:1px solid var(--line);
+  display:flex;justify-content:space-between;
+  font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#3B4E63;
+}
+.rise{animation:rise .9s cubic-bezier(.16,.84,.34,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.d1{animation-delay:.05s}.d2{animation-delay:.15s}.d3{animation-delay:.25s}
+.d4{animation-delay:.35s}.d5{animation-delay:.45s}.d6{animation-delay:.55s}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar rise d1">
+    <div class="brand">
+      <b>STREAM FOUNDRY</b><span class="sep">//</span><span>数据管道铸造厂</span><span class="sep">//</span><span>Web Streams API</span>
+    </div>
+    <div class="meta">
+      <span class="lamp" id="bpLamp"><i></i>BACKPRESSURE</span>
+      <span>REV. 1.0</span><span>DESKTOP ONLY</span>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div>
+      <h1><span class="ln-a">PIPE</span><br><em class="ln-b">THROUGH</em></h1>
+      <div class="sub">
+        <span class="chip amber">ReadableStream</span>
+        <span style="color:var(--line-2)">──▶</span>
+        <span class="chip">TransformStream</span>
+        <span style="color:var(--line-2)">──▶</span>
+        <span class="chip cyan">ReadableStream</span>
+        <span style="color:var(--fog)">TransformStream 链式加工流水线 · 工作示意图</span>
+      </div>
+    </div>
+    <div class="eq">
+      <b>一句话读懂</b><br>
+      <code>readable.pipeThrough(transform)</code> 把数据灌进
+      <code>transform.writable</code>，并把
+      <code>transform.readable</code> <b>作为返回值交还给你</b> —— 所以能一节接一节地链下去。
+    </div>
+  </div>
+  <div class="stage rise d3">
+    <div class="stage-head">
+      <div class="title">FIG.01 — <b>pipeThrough 工作示意</b> / SOURCE → T1 → T2 → SINK</div>
+      <div class="legend">
+        <span><i class="a"></i>原始字节 chunk</span>
+        <span><i class="b"></i>transform 加工</span>
+        <span><i class="c"></i>加工后 chunk</span>
+      </div>
+    </div>
+
+    <svg id="stage" viewBox="0 0 1600 660" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M40 0 L0 0 0 40" fill="none" stroke="#15202C" stroke-width="1"/>
+        </pattern>
+        <pattern id="gridX" width="200" height="200" patternUnits="userSpaceOnUse">
+          <path d="M200 0 L0 0 0 200" fill="none" stroke="#1B2836" stroke-width="1.4"/>
+        </pattern>
+        <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#2A3644"/><stop offset=".45" stop-color="#1B2530"/><stop offset="1" stop-color="#131B24"/>
+        </linearGradient>
+        <linearGradient id="steelTop" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#3B4C5F"/><stop offset="1" stop-color="#1D2732"/>
+        </linearGradient>
+        <linearGradient id="pipeGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#3E5064"/><stop offset=".5" stop-color="#25323F"/><stop offset="1" stop-color="#151D26"/>
+        </linearGradient>
+        <radialGradient id="coreT1" cx=".38" cy=".34" r=".78">
+          <stop offset="0" stop-color="#FFD9A0"/><stop offset=".38" stop-color="#FF8A2B"/><stop offset="1" stop-color="#8A2E00"/>
+        </radialGradient>
+        <radialGradient id="coreT2" cx=".38" cy=".34" r=".78">
+          <stop offset="0" stop-color="#EAFFFF"/><stop offset=".38" stop-color="#5CE7FF"/><stop offset="1" stop-color="#034858"/>
+        </radialGradient>
+        <pattern id="hazard" width="18" height="18" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+          <rect width="18" height="18" fill="#121920"/><rect width="9" height="18" fill="#FFB01F" opacity=".65"/>
+        </pattern>
+        <filter id="glowSoft" x="-120%" y="-120%" width="340%" height="340%">
+          <feGaussianBlur stdDeviation="5" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glowBig" x="-160%" y="-160%" width="420%" height="420%">
+          <feGaussianBlur stdDeviation="9" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="drop" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity=".55"/>
+        </filter>
+      </defs>
+
+      <rect x="0" y="0" width="1600" height="660" fill="#0A0F15"/>
+      <rect x="0" y="0" width="1600" height="660" fill="url(#grid)" class="grid-bg"/>
+      <rect x="0" y="0" width="1600" height="660" fill="url(#gridX)" opacity=".5"/>
+      <text class="spec-text" x="22" y="98">PIPE THROUGH</text>
+      <path d="M18 46 L18 18 L46 18" fill="none" stroke="#31424F" stroke-width="2"/>
+      <path d="M1554 18 L1582 18 L1582 46" fill="none" stroke="#31424F" stroke-width="2"/>
+      <path d="M18 614 L18 642 L46 642" fill="none" stroke="#31424F" stroke-width="2"/>
+      <path d="M1554 642 L1582 642 L1582 614" fill="none" stroke="#31424F" stroke-width="2"/>
+
+      <g id="pipes">
+        <path class="pipe-glow" id="glowA" d="M256 400 C330 400 355 310 430 310" stroke="#FFB01F"/>
+        <path class="pipe-body" d="M256 400 C330 400 355 310 430 310"/>
+        <path class="pipe-shell" d="M256 400 C330 400 355 310 430 310"/>
+        <path class="pipe-bore" d="M256 400 C330 400 355 310 430 310"/>
+        <path class="pipe-flow" id="flowA" d="M256 400 C330 400 355 310 430 310" stroke="#FFB01F"/>
+        <path id="pipeA" d="M256 400 C330 400 355 310 430 310" fill="none" stroke="none"/>
+
+        <path class="pipe-glow" id="glowB" d="M750 310 C825 310 855 360 930 360" stroke="#C6F24E"/>
+        <path class="pipe-body" d="M750 310 C825 310 855 360 930 360"/>
+        <path class="pipe-shell" d="M750 310 C825 310 855 360 930 360"/>
+        <path class="pipe-bore" d="M750 310 C825 310 855 360 930 360"/>
+        <path class="pipe-flow" id="flowB" d="M750 310 C825 310 855 360 930 360" stroke="#C6F24E"/>
+        <path id="pipeB" d="M750 310 C825 310 855 360 930 360" fill="none" stroke="none"/>
+
+        <path class="pipe-glow" id="glowC" d="M1250 360 C1315 360 1345 330 1400 330" stroke="#37E0FF"/>
+        <path class="pipe-body" d="M1250 360 C1315 360 1345 330 1400 330"/>
+        <path class="pipe-shell" d="M1250 360 C1315 360 1345 330 1400 330"/>
+        <path class="pipe-bore" d="M1250 360 C1315 360 1345 330 1400 330"/>
+        <path class="pipe-flow" id="flowC" d="M1250 360 C1315 360 1345 330 1400 330" stroke="#37E0FF"/>
+        <path id="pipeC" d="M1250 360 C1315 360 1345 330 1400 330" fill="none" stroke="none"/>
+      </g>
+
+      <!-- SOURCE -->
+      <g id="source" filter="url(#drop)">
+        <rect class="housing" x="56" y="250" width="180" height="330" rx="6"/>
+        <rect class="header-bar" x="46" y="234" width="200" height="14" rx="2"/>
+        <rect class="header-bar" x="56" y="250" width="180" height="42" rx="4"/>
+        <text class="t-title" x="146" y="272" text-anchor="middle">SOURCE</text>
+        <text class="t-sub" x="146" y="286" text-anchor="middle">ReadableStream</text>
+        <circle class="led led-on" id="ledSrc" cx="216" cy="264" r="5" fill="#FFB01F"/>
+        <rect class="flange" x="228" y="372" width="16" height="56" rx="2"/>
+        <rect class="flange" x="244" y="380" width="14" height="40" rx="2"/>
+        <circle class="flange-bolt" cx="236" cy="380" r="2.4"/>
+        <circle class="flange-bolt" cx="236" cy="420" r="2.4"/>
+        <rect class="bay" x="76" y="312" width="140" height="152" rx="4"/>
+        <rect class="bay-slot" x="84" y="322" width="124" height="132" rx="3"/>
+        <text class="t-label" x="146" y="340" text-anchor="middle">ENQUEUE QUEUE</text>
+        <g id="srcQueue"></g>
+        <text class="t-label" id="srcCount" x="146" y="452" text-anchor="middle" fill="#FFB01F">READY</text>
+        <text class="t-label" x="146" y="480" text-anchor="middle" style="letter-spacing:.06em">source.pull()</text>
+        <text class="t-label" x="146" y="495" text-anchor="middle" style="letter-spacing:.06em">controller.enqueue()</text>
+        <text class="t-label" x="146" y="510" text-anchor="middle" style="letter-spacing:.06em">encoder.encode(raw)</text>
+        <g id="dial">
+          <circle class="dial-face" cx="146" cy="540" r="20"/>
+          <path class="dial-tick" d="M132 552 A20 20 0 0 1 132 528" fill="none" opacity=".55"/>
+          <path class="dial-tick red" d="M160 528 A20 20 0 0 1 160 552" fill="none" opacity=".8"/>
+          <line class="dial-tick" x1="133" y1="550" x2="136" y2="547"/>
+          <line class="dial-tick" x1="146" y1="521" x2="146" y2="525"/>
+          <line class="dial-tick red" x1="159" y1="550" x2="156" y2="547"/>
+          <line class="dial-needle" id="needle" x1="146" y1="540" x2="146" y2="525"/>
+          <circle class="dial-hub" cx="146" cy="540" r="3.5"/>
+        </g>
+        <rect class="hazard-band" x="56" y="562" width="180" height="18" fill="url(#hazard)"/>
+      </g>
+
+      <!-- T1 -->
+      <g id="m1" filter="url(#drop)">
+        <rect class="housing" x="430" y="130" width="320" height="360" rx="6"/>
+        <rect class="housing-in" x="442" y="190" width="296" height="238" rx="4"/>
+        <rect class="header-bar" x="430" y="130" width="320" height="52" rx="5"/>
+        <text class="t-title" x="452" y="154">T1 · TextDecoderStream</text>
+        <text class="t-sub" x="452" y="172">内置 BUILT-IN TRANSFORM</text>
+        <circle class="led" id="led1" cx="722" cy="156" r="6" fill="#3A2A12"/>
+        <rect class="bay" x="454" y="206" width="84" height="192" rx="4"/>
+        <rect class="bay-slot" x="462" y="250" width="68" height="104" rx="3"/>
+        <text class="t-label" x="496" y="228" text-anchor="middle">WRITABLE</text>
+        <text class="t-label" x="496" y="243" text-anchor="middle" fill="#FFB01F">IN</text>
+        <rect class="flange" x="408" y="286" width="26" height="48" rx="2"/>
+        <circle class="flange-bolt" cx="421" cy="296" r="2.4"/>
+        <circle class="flange-bolt" cx="421" cy="324" r="2.4"/>
+        <circle class="kernel-halo" cx="600" cy="310" r="78" fill="url(#coreT1)" opacity=".35" filter="url(#glowBig)"/>
+        <g transform="translate(600,310)">
+          <g id="gear0">
+            <circle class="kernel-ring" cx="0" cy="0" r="54" stroke="#5A3410"/>
+            <g id="teeth0" fill="#4A2C10"></g>
+            <circle cx="0" cy="0" r="40" fill="url(#coreT1)"/>
+            <circle class="kernel-face" cx="0" cy="0" r="40"/>
+            <text class="t-glyph" x="0" y="10" text-anchor="middle">字</text>
+          </g>
+        </g>
+        <text class="t-label" x="600" y="418" text-anchor="middle" style="letter-spacing:.04em;font-weight:600">transform(chunk, ctrl)</text>
+        <text class="t-label" x="600" y="434" text-anchor="middle" fill="#FF8A2B" style="letter-spacing:.04em;font-weight:600">bytes → string</text>
+        <rect class="bay" x="662" y="206" width="84" height="192" rx="4"/>
+        <rect class="bay-slot" x="670" y="250" width="68" height="104" rx="3"/>
+        <text class="t-label" x="704" y="228" text-anchor="middle">READABLE</text>
+        <text class="t-label" x="704" y="243" text-anchor="middle" fill="#C6F24E">OUT</text>
+        <rect class="flange" x="746" y="286" width="26" height="48" rx="2"/>
+        <circle class="flange-bolt" cx="759" cy="296" r="2.4"/>
+        <circle class="flange-bolt" cx="759" cy="324" r="2.4"/>
+        <text class="t-code" x="590" y="458" text-anchor="middle">raw.pipeThrough(new TextDecoderStream())</text>
+        <rect class="hazard-band" x="430" y="470" width="320" height="18" fill="url(#hazard)"/>
+        <circle class="rivet" cx="442" cy="142" r="3"/><circle class="rivet" cx="738" cy="142" r="3"/>
+        <circle class="rivet" cx="442" cy="478" r="3"/><circle class="rivet" cx="738" cy="478" r="3"/>
+      </g>
+
+      <!-- T2 -->
+      <g id="m2" filter="url(#drop)">
+        <rect class="housing" x="930" y="180" width="320" height="360" rx="6"/>
+        <rect class="housing-in" x="942" y="240" width="296" height="238" rx="4"/>
+        <rect class="header-bar" x="930" y="180" width="320" height="52" rx="5"/>
+        <text class="t-title" x="952" y="204">T2 · ShapePress</text>
+        <text class="t-sub" x="952" y="222">自定义 CUSTOM TRANSFORMSTREAM</text>
+        <circle class="led" id="led2" cx="1222" cy="206" r="6" fill="#0C2E36"/>
+        <rect class="bay" x="954" y="256" width="84" height="192" rx="4"/>
+        <rect class="bay-slot" x="962" y="300" width="68" height="104" rx="3"/>
+        <text class="t-label" x="996" y="278" text-anchor="middle">WRITABLE</text>
+        <text class="t-label" x="996" y="293" text-anchor="middle" fill="#C6F24E">IN</text>
+        <rect class="flange" x="908" y="336" width="26" height="48" rx="2"/>
+        <circle class="flange-bolt" cx="921" cy="346" r="2.4"/>
+        <circle class="flange-bolt" cx="921" cy="374" r="2.4"/>
+        <circle class="kernel-halo" cx="1100" cy="360" r="78" fill="url(#coreT2)" opacity=".35" filter="url(#glowBig)"/>
+        <g transform="translate(1100,360)">
+          <g id="gear1">
+            <circle class="kernel-ring" cx="0" cy="0" r="54" stroke="#0A4A5C"/>
+            <g id="teeth1" fill="#0A4A5C"></g>
+            <circle cx="0" cy="0" r="40" fill="url(#coreT2)"/>
+            <circle class="kernel-face" cx="0" cy="0" r="40"/>
+            <text class="t-glyph" x="0" y="10" text-anchor="middle" fill="#032028">↑</text>
+          </g>
+        </g>
+        <text class="t-label" x="1100" y="468" text-anchor="middle" style="letter-spacing:.04em;font-weight:600">transform(chunk, ctrl)</text>
+        <text class="t-label" x="1100" y="484" text-anchor="middle" fill="#5CE7FF" style="letter-spacing:.04em;font-weight:600">toUpperCase() + '!'</text>
+        <rect class="bay" x="1162" y="256" width="84" height="192" rx="4"/>
+        <rect class="bay-slot" x="1170" y="300" width="68" height="104" rx="3"/>
+        <text class="t-label" x="1204" y="278" text-anchor="middle">READABLE</text>
+        <text class="t-label" x="1204" y="293" text-anchor="middle" fill="#37E0FF">OUT</text>
+        <rect class="flange" x="1246" y="336" width="26" height="48" rx="2"/>
+        <circle class="flange-bolt" cx="1259" cy="346" r="2.4"/>
+        <circle class="flange-bolt" cx="1259" cy="374" r="2.4"/>
+        <text class="t-code" x="1090" y="508" text-anchor="middle">text.pipeThrough(new TransformStream({ transform }))</text>
+        <rect class="hazard-band" x="930" y="520" width="320" height="18" fill="url(#hazard)"/>
+        <circle class="rivet" cx="942" cy="192" r="3"/><circle class="rivet" cx="1238" cy="192" r="3"/>
+        <circle class="rivet" cx="942" cy="528" r="3"/><circle class="rivet" cx="1238" cy="528" r="3"/>
+      </g>
+
+      <!-- SINK -->
+      <g id="sink" filter="url(#drop)">
+        <rect class="housing" x="1400" y="200" width="170" height="320" rx="6"/>
+        <rect class="header-bar" x="1400" y="200" width="170" height="44" rx="5"/>
+        <text class="t-title" x="1485" y="222" text-anchor="middle">SINK</text>
+        <text class="t-sub" x="1485" y="238" text-anchor="middle">getReader() / pipeTo()</text>
+        <circle class="led" id="ledSink" cx="1548" cy="216" r="5" fill="#2A3310"/>
+        <rect class="flange" x="1374" y="306" width="30" height="48" rx="2"/>
+        <circle class="flange-bolt" cx="1389" cy="316" r="2.4"/>
+        <circle class="flange-bolt" cx="1389" cy="344" r="2.4"/>
+        <rect class="bay" x="1418" y="262" width="134" height="176" rx="4"/>
+        <rect class="bay-slot" x="1426" y="272" width="118" height="156" rx="3"/>
+        <text class="t-label" x="1485" y="292" text-anchor="middle">RECEIVED</text>
+        <g id="sinkStack"></g>
+        <text class="t-label" x="1485" y="470" text-anchor="middle" fill="#C6F24E">await reader.read()</text>
+        <text class="t-label" x="1485" y="488" text-anchor="middle">value: string</text>
+        <rect class="hazard-band" x="1400" y="500" width="170" height="18" fill="url(#hazard)"/>
+      </g>
+
+      <g id="annos">
+        <!-- chunk 类型：引线接到管道真实位置 -->
+        <g>
+          <rect x="268" y="430" width="150" height="26" rx="3" fill="rgba(255,176,31,.10)" stroke="#7A4A00"/>
+          <text class="anno-text" x="343" y="448" text-anchor="middle" fill="#FFB01F">chunk · Uint8Array</text>
+          <path class="anno-line" d="M343 430 L343 352"/>
+          <circle cx="343" cy="351" r="2.4" fill="#FFB01F"/>
+        </g>
+        <!-- pipeB 就是 pipeThrough() 的返回值 -->
+        <g>
+          <text class="anno-text sm" x="840" y="218" text-anchor="middle" fill="#7FC4D6">↓ 这就是返回值</text>
+          <rect x="776" y="230" width="128" height="50" rx="3" fill="rgba(55,224,255,.12)" stroke="#12708A"/>
+          <text class="anno-text sm" x="840" y="250" text-anchor="middle" fill="#37E0FF" style="letter-spacing:.02em">pipeThrough()</text>
+          <text class="anno-text sm" x="840" y="268" text-anchor="middle" fill="#8FD4E4" style="letter-spacing:.02em">transform.readable</text>
+          <path class="anno-brk" d="M776 300 L776 288 L904 288 L904 300" stroke="#37E0FF"/>
+          <path class="anno-line" d="M840 292 L840 330"/>
+          <circle cx="840" cy="331" r="2.4" fill="#37E0FF"/>
+        </g>
+        <g>
+          <rect x="786" y="384" width="132" height="26" rx="3" fill="rgba(198,242,78,.10)" stroke="#4E6A10"/>
+          <text class="anno-text" x="852" y="402" text-anchor="middle" fill="#C6F24E">chunk · string</text>
+          <path class="anno-line" d="M852 384 L852 348"/>
+          <circle cx="852" cy="347" r="2.4" fill="#C6F24E"/>
+        </g>
+        <g>
+          <rect x="1259" y="252" width="132" height="26" rx="3" fill="rgba(55,224,255,.10)" stroke="#0A4A5C"/>
+          <text class="anno-text" x="1325" y="270" text-anchor="middle" fill="#37E0FF">chunk · string</text>
+          <path class="anno-line" d="M1325 278 L1325 342"/>
+          <circle cx="1325" cy="343" r="2.4" fill="#37E0FF"/>
+        </g>
+        <g>
+          <rect class="callout" x="452" y="26" width="600" height="78" rx="5"/>
+          <path class="leader" d="M840 104 L840 202"/>
+          <path class="leader" d="M834 196 L840 204 L846 196"/>
+          <text class="callout-t" x="474" y="54">pipeThrough(transform) ≈ readable.pipeTo(transform.writable)</text>
+          <text class="callout-t c" x="474" y="78">＋ return transform.readable ← 就是这一段，可继续接下一个 pipeThrough</text>
+          <text class="anno-text sm" x="474" y="96" fill="#6E8093">左侧吃进 WRITABLE，中间 transform() 加工，右侧吐出 READABLE</text>
+        </g>
+        <g>
+          <line class="dim-line" x1="56" y1="612" x2="1570" y2="612"/>
+          <line class="dim-tick" x1="146" y1="602" x2="146" y2="622"/>
+          <line class="dim-tick" x1="600" y1="602" x2="600" y2="622"/>
+          <line class="dim-tick" x1="1100" y1="602" x2="1100" y2="622"/>
+          <line class="dim-tick" x1="1485" y1="602" x2="1485" y2="622"/>
+          <text class="dim-text" x="146" y="644" text-anchor="middle">00 / SOURCE</text>
+          <text class="dim-text" x="600" y="644" text-anchor="middle">01 / TRANSFORM</text>
+          <text class="dim-text" x="1100" y="644" text-anchor="middle">02 / TRANSFORM</text>
+          <text class="dim-text" x="1485" y="644" text-anchor="middle">03 / SINK</text>
+          <text class="dim-text hi" x="850" y="596" text-anchor="middle">每接一节 = 多一次 .pipeThrough()，管道可无限延长</text>
+        </g>
+      </g>
+
+      <g id="fx"></g>
+      <g id="packets"></g>
+    </svg>
+  </div>
+  <div class="console rise d4">
+    <div class="panel">
+      <div class="panel-head"><b>控制台</b><span>CONTROL DECK</span></div>
+      <div class="panel-body">
+        <div class="ctl-row">
+          <button class="btn primary" id="btnEmit">▸ 发射 CHUNK</button>
+          <button class="btn" id="btnAuto">自动巡航</button>
+          <button class="btn ghost" id="btnPause">暂停</button>
+          <button class="btn ghost danger" id="btnReset">重置</button>
+        </div>
+        <div class="ctl-row">
+          <div class="slider-wrap">
+            <label>流速 FLOW</label>
+            <input type="range" id="speed" min="0.3" max="3" step="0.1" value="1">
+            <span class="speed-val" id="speedVal">1.0×</span>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat a"><div class="k">IN FLIGHT</div><div class="v" id="stFly">0</div></div>
+          <div class="stat b"><div class="k">TRANSFORMED</div><div class="v" id="stTr">0</div></div>
+          <div class="stat c"><div class="k">DELIVERED</div><div class="v" id="stDl">0</div></div>
+        </div>
+        <div class="pipe-eq">
+          <span class="a">const text</span> = raw.<code>pipeThrough</code>(<span class="g">new TextDecoderStream()</span>);<br>
+          <span class="c">const loud</span> = text.<code>pipeThrough</code>(<span class="g">new TransformStream({...})</span>);<br>
+          <span style="color:var(--fog)">// loud 就是 T2 的 readable，可继续 .pipeThrough(...) 或 getReader()</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><b>LIVE CODE</b><span>运行时高亮</span></div>
+      <div class="panel-body" style="padding:10px">
+        <div class="code" id="code"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><b>EVENT LOG</b><span id="logCount">0 EVENTS</span></div>
+      <div class="panel-body" style="padding:10px">
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes rise d5">
+    <div class="note n1">
+      <div class="num">01</div>
+      <h3>返回值是 ReadableStream</h3>
+      <p><code>pipeThrough(t)</code> 一边把上游 chunk 写入 <code>t.writable</code>，一边把 <code>t.readable</code> <b style="color:var(--bone)">作为返回值</b>交还。所以它不是终点，而是<b style="color:var(--bone)">下一段管道的起点</b>。</p>
+    </div>
+    <div class="note n2">
+      <div class="num">02</div>
+      <h3>TransformStream 两侧</h3>
+      <p>左边 <code>writable</code> 吃进 chunk，中间 <code>transform(chunk, controller)</code> 加工并 <code>enqueue</code>，右边 <code>readable</code> 吐出新 chunk —— 图中熔炉的进料口 / 内核 / 出料口。</p>
+    </div>
+    <div class="note n3">
+      <div class="num">03</div>
+      <h3>可无限链式组装</h3>
+      <p><code>a.pipeThrough(t1).pipeThrough(t2).pipeThrough(t3)</code> —— 每调用一次就往流水线上拧一节工序。内置的 <code>TextDecoderStream</code> / <code>CompressionStream</code> 与自定义变换可随意混搭。</p>
+    </div>
+    <div class="note n4">
+      <div class="num">04</div>
+      <h3>自动背压不炸内存</h3>
+      <p>下游读得慢时 <code>writable.desiredSize</code> 变小，上游 <code>pull</code> 自动减速。左侧表盘指针打进红区 = 队列堆积，数据不会在内存里无限膨胀。</p>
+    </div>
+  </div>
+
+  <div class="footer rise d6">
+    <span>STREAM FOUNDRY — pipeThrough WORKING DIAGRAM</span>
+    <span>WEB STREAMS API · TRANSFORMSTREAM · NO MOBILE</span>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/MotionPathPlugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/DrawSVGPlugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/SplitText.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* ============================================================
+   STREAM FOUNDRY — pipeThrough
+   动画层：GSAP (MotionPathPlugin / DrawSVGPlugin / SplitText)
+   高亮层：Prism
+   ============================================================ */
+
+gsap.registerPlugin(MotionPathPlugin, DrawSVGPlugin);
+
+const $  = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+const svgNS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs={}) => {
+  const n = document.createElementNS(svgNS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+};
+const clamp = (v,a,b) => v < a ? a : (v > b ? b : v);
+
+/* ---------- 示例源码（交给 Prism 逐行上色） ---------- */
+const CODE_LINES = [
+  `// ① 源头 ReadableStream —— pull 时吐出原始字节`,
+  `const raw = new ReadableStream({`,
+  `  pull(c) {`,
+  `    c.enqueue(encoder.encode('iron'));`,
+  `    // c.close()  ← 生产完毕`,
+  `  }`,
+  `});`,
+  ``,
+  `// ② pipeThrough #1 —— 内置解码：bytes → string`,
+  `const text = raw.pipeThrough(new TextDecoderStream());`,
+  ``,
+  `// ③ pipeThrough #2 —— 自定义 TransformStream`,
+  `const loud = text.pipeThrough(new TransformStream({`,
+  `  transform(chunk, ctrl) {`,
+  `    ctrl.enqueue(chunk.toUpperCase() + '!');`,
+  `  }`,
+  `}));`,
+  ``,
+  `// ④ 消费 pipeThrough 最终返回的 ReadableStream`,
+  `const reader = loud.getReader();`,
+  `const { value } = await reader.read();`
+];
+
+function buildCode(){
+  const box = $('#code');
+  const frag = document.createDocumentFragment();
+  CODE_LINES.forEach((src, i) => {
+    const row = document.createElement('div');
+    row.className = 'cl';
+    row.dataset.l = String(i + 1);
+    const ln = document.createElement('span');
+    ln.className = 'ln';
+    ln.textContent = String(i + 1);
+    const tx = document.createElement('span');
+    tx.className = 'tx';
+    tx.innerHTML = Prism.highlight(src, Prism.languages.javascript, 'javascript');
+    row.appendChild(ln); row.appendChild(tx);
+    frag.appendChild(row);
+  });
+  box.appendChild(frag);
+}
+
+function hot(lines, mode){
+  $$('#code .cl').forEach(n => n.classList.remove('hot','hot2'));
+  (lines||[]).forEach(l => {
+    const n = $('#code .cl[data-l="' + l + '"]');
+    if (n) n.classList.add(mode === 2 ? 'hot2' : 'hot');
+  });
+}
+
+/* ---------- 几何（与 SVG 坐标一一对应） ---------- */
+const SEGS   = [$('#pipeA'), $('#pipeB'), $('#pipeC')];
+const SEGLEN = SEGS.map(p => p.getTotalLength());
+const SEG_DUR = SEGLEN.map(L => L / 340);          // 340 user-units / s
+const SEG_SEL = ['#pipeA', '#pipeB', '#pipeC'];
+
+const KERNEL   = [{x:600,y:310},{x:1100,y:360}];
+const PORT_OUT = [{x:750,y:310},{x:1250,y:360}];
+const SINK_PT  = {x:1485,y:400};
+
+const FLOW_IDS = ['flowA','flowB','flowC'];
+const GLOW_IDS = ['glowA','glowB','glowC'];
+const LEDS     = [$('#led1'), $('#led2')];
+const HALOS    = [$('#m1 .kernel-halo'), $('#m2 .kernel-halo')];
+const MACHINES = [$('#m1'), $('#m2')];
+const LED_IDLE = ['#3A2A12','#0C2E36'];
+const LED_BUSY = ['#FFB01F','#5CE7FF'];
+
+/* ---------- 原料 ---------- */
+const ORE = ['iron','flux','bolt','gear','pipe','heat','cast','core'];
+function hexOf(s){
+  return Array.from(new TextEncoder().encode(s))
+    .map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+}
+function shapeOf(word, stage){
+  if (stage === 0) return { type:'BYTES', val: hexOf(word), color:'#FFB01F', chip:'#FF8A00', body:'rgba(44,28,4,.94)' };
+  if (stage === 1) return { type:'TEXT',  val: '"'+word+'"', color:'#C6F24E', chip:'#8FBF20', body:'rgba(30,40,8,.94)' };
+  return              { type:'STRING', val: '"'+word.toUpperCase()+'!"', color:'#37E0FF', chip:'#00C2E8', body:'rgba(4,34,42,.94)' };
+}
+
+/* ---------- 状态 ---------- */
+const MAX_FLIGHT = 3;
+const MAX_QUEUE  = 8;
+const state = {
+  packets: [], queue: [], sink: [],
+  transformed: 0, delivered: 0, seq: 0, emitN: 0,
+  speed: 1, paused: false, auto: false, logN: 0
+};
+const pipeUse = [0,0,0];
+const machUse = [0,0];
+let autoTween = null;
+
+/* ---------- 日志 ---------- */
+const logBox = $('#log');
+function log(tag, msg, cls){
+  state.logN++;
+  $('#logCount').textContent = state.logN + ' EVENTS';
+  const d = document.createElement('div');
+  d.className = 'lg ' + (cls || '');
+  const t = new Date();
+  const ts = [t.getMinutes(), t.getSeconds(), Math.floor(t.getMilliseconds()/10)]
+    .map(n => String(n).padStart(2,'0')).join(':');
+  d.innerHTML = '<span class="ts"></span><span class="tg"></span><span class="ms"></span>';
+  d.querySelector('.ts').textContent = ts;
+  d.querySelector('.tg').textContent = tag;
+  d.querySelector('.ms').textContent = msg;
+  logBox.appendChild(d);
+  while (logBox.children.length > 80) logBox.removeChild(logBox.firstChild);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+/* ---------- 时间缩放（流速 / 暂停） ---------- */
+/* 全局基准速率：滑杆「1.0×」= 基准半速（齿轮不受影响，保持自身节奏） */
+const BASE_RATE = 0.5;
+
+function applyTime(){
+  const t = state.paused ? 0 : state.speed;
+  const flow = t * BASE_RATE;
+  state.packets.forEach(p => { if (p.tl) p.tl.timeScale(flow); });
+  if (autoTween) autoTween.timeScale(flow);
+}
+
+/* ---------- 占用计数 → 点亮管道 / 机器 ---------- */
+function syncPipes(){
+  for (let i = 0; i < 3; i++){
+    const on = pipeUse[i] > 0;
+    const f = $('#'+FLOW_IDS[i]), gl = $('#'+GLOW_IDS[i]);
+    if (f)  f.classList.toggle('hot', on);
+    if (gl) gl.classList.toggle('hot', on);
+  }
+}
+function syncMachines(){
+  for (let i = 0; i < 2; i++){
+    const on = machUse[i] > 0;
+    LEDS[i].setAttribute('fill', on ? LED_BUSY[i] : LED_IDLE[i]);
+    LEDS[i].classList.toggle('led-on', on);
+    HALOS[i].setAttribute('opacity', on ? '.95' : '.35');
+    MACHINES[i].classList.toggle('busy', on);
+  }
+}
+const usePipe   = i => { pipeUse[i]++; syncPipes(); };
+const unusePipe = i => { pipeUse[i] = Math.max(0, pipeUse[i]-1); syncPipes(); };
+const useM      = i => { machUse[i]++; syncMachines(); };
+const unuseM    = i => { machUse[i] = Math.max(0, machUse[i]-1); syncMachines(); };
+
+/* ---------- 统计 ---------- */
+function updateStats(){
+  $('#stFly').textContent = state.packets.length;
+  $('#stTr').textContent  = state.transformed;
+  $('#stDl').textContent  = state.delivered;
+}
+
+/* ---------- 源头队列 / 背压表 ---------- */
+function renderSrcQueue(){
+  const g = $('#srcQueue');
+  g.textContent = '';
+  state.queue.slice(0, 4).forEach((w, i) => {
+    const y = 436 - i * 22;
+    g.appendChild(el('rect', {
+      x:92, y:y-14, width:108, height:16, rx:3,
+      fill:'rgba(255,176,31,.14)', stroke:'#7A4A00', 'stroke-width':1
+    }));
+    const t = el('text', {
+      x:146, y:y-2, 'text-anchor':'middle', fill:'#FFB01F',
+      'font-size':'11', 'letter-spacing':'.08em', 'font-weight':'600'
+    });
+    t.textContent = 'Uint8Array · ' + w.toUpperCase();
+    g.appendChild(t);
+  });
+  const q = state.queue.length;
+  const c = $('#srcCount');
+  c.textContent = q === 0 ? 'READY' : ('QUEUED × ' + q);
+  c.setAttribute('fill', q >= MAX_QUEUE - 1 ? '#FF4D6D' : '#FFB01F');
+
+  const press = clamp((state.packets.length + q * 0.7) / (MAX_FLIGHT + MAX_QUEUE * 0.7), 0, 1);
+  gsap.set('#needle', { rotation: -125 + press * 250, svgOrigin: '146 540' });
+  $('#needle').classList.toggle('hi', press > 0.62);
+
+  const warn = state.packets.length >= MAX_FLIGHT || q > 0;
+  $('#bpLamp').classList.toggle('warn', warn);
+}
+
+/* ---------- 交付仓 ---------- */
+function renderSink(){
+  const g = $('#sinkStack');
+  g.textContent = '';
+  state.sink.slice(-4).forEach((w, i) => {
+    const y = 408 - i * 24;
+    g.appendChild(el('rect', {
+      x:1434, y:y-14, width:102, height:16, rx:3,
+      fill:'rgba(55,224,255,.14)', stroke:'#0A4A5C', 'stroke-width':1
+    }));
+    const t = el('text', {
+      x:1485, y:y-2, 'text-anchor':'middle', fill:'#37E0FF',
+      'font-size':'11', 'letter-spacing':'.06em', 'font-weight':'600'
+    });
+    t.textContent = '"' + w.toUpperCase() + '!"';
+    g.appendChild(t);
+  });
+  const led = $('#ledSink');
+  led.setAttribute('fill', state.sink.length ? '#C6F24E' : '#2A3310');
+  led.classList.toggle('led-on', state.sink.length > 0);
+}
+
+/* ---------- 数据片图形 ---------- */
+function makePacketG(){
+  const g = el('g', { class:'packet' });
+  const body = el('rect', { class:'pk-body', x:-74, y:-21, width:148, height:42, rx:6 });
+  const chip = el('rect', { class:'pk-chip', x:-74, y:-21, width:6, height:42, rx:3 });
+  const type = el('text', { class:'pk-type', x:-58, y:-4 });
+  const val  = el('text', { class:'pk-val',  x:-58, y:14 });
+  g.appendChild(body); g.appendChild(chip); g.appendChild(type); g.appendChild(val);
+  g._body = body; g._chip = chip; g._type = type; g._val = val;
+  return g;
+}
+function paintPacket(p){
+  const s = shapeOf(p.word, p.stage);
+  p.g._body.setAttribute('fill',   s.body);
+  p.g._body.setAttribute('stroke', s.color);
+  p.g._chip.setAttribute('fill',   s.chip);
+  p.g._type.setAttribute('fill',   s.color);
+  p.g._val .setAttribute('fill',   s.color);
+  p.g._type.textContent = s.type;
+  p.g._val .textContent = s.val;
+}
+
+/* ---------- 火花 ---------- */
+function spark(cx, cy, color){
+  const fx = $('#fx');
+  for (let i = 0; i < 9; i++){
+    const c = el('circle', { cx, cy, r: 1.8, fill: color, opacity: .95, filter: 'url(#glowSoft)' });
+    fx.appendChild(c);
+    const a = Math.random() * Math.PI * 2;
+    const sp = 40 + Math.random() * 95;
+    gsap.to(c, {
+      attr: { cx: cx + Math.cos(a) * sp, cy: cy + Math.sin(a) * sp + 34, r: 0.2 },
+      opacity: 0, duration: 0.35 + Math.random() * 0.3, ease: 'power1.out',
+      onComplete(){ c.remove(); }
+    });
+  }
+}
+
+/* ---------- 工序：进入机器 → 加工 → 出料 ---------- */
+function transformAt(p, i){
+  p.stage = i + 1;
+  paintPacket(p);
+  state.transformed++;
+  updateStats();
+  if (i === 0){
+    log('T1', 'transform: ' + hexOf(p.word) + '  →  "' + p.word + '"', 't1');
+    hot([9,10], 1);
+    spark(KERNEL[0].x, KERNEL[0].y, '#FF8A2B');
+  } else {
+    log('T2', 'transform: "' + p.word + '"  →  "' + p.word.toUpperCase() + '!"', 't2');
+    hot([13,14,15], 2);
+    spark(KERNEL[1].x, KERNEL[1].y, '#5CE7FF');
+  }
+}
+
+function deliver(p){
+  state.sink.push(p.word);
+  state.delivered++;
+  updateStats();
+  renderSink();
+  log('SINK', 'await reader.read() → "' + p.word.toUpperCase() + '!"', 'sink');
+  hot([20,21], 2);
+  p.g.remove();
+  const idx = state.packets.indexOf(p);
+  if (idx >= 0) state.packets.splice(idx, 1);
+  drainQueue();
+}
+
+/* ============================================================
+   每个数据片 = 一条 GSAP 时间线
+   MotionPathPlugin 负责沿管道行进，其余为坐标补间
+============================================================ */
+function buildPacketTL(p){
+  const g = p.g;
+  const tl = gsap.timeline({ paused: true, onComplete(){ deliver(p); } });
+
+  /* 沿管道行进 */
+  function ride(i){
+    const L = 'p' + i;
+    tl.addLabel(L, '>');
+    tl.call(() => usePipe(i), null, L);
+    tl.to(g, {
+      motionPath: { path: SEG_SEL[i] },
+      duration: SEG_DUR[i], ease: 'none'
+    }, L);
+    tl.call(() => unusePipe(i), null, L + '+=' + SEG_DUR[i].toFixed(4));
+  }
+
+  /* 进料 → 加工 → 出料 */
+  function machine(i, kern, out){
+    const L = 'm' + i;
+    tl.addLabel(L, '>');
+    tl.call(() => useM(i), null, L);
+    tl.to(g, { x: kern.x, y: kern.y, duration: 0.18, ease: 'power2.inOut' }, L);
+    tl.to(g, { scale: 1.06, yoyo: true, repeat: 3, duration: 0.12, ease: 'sine.inOut' }, L + '+=0.18');
+    tl.call(() => transformAt(p, i), null, L + '+=0.42');
+    tl.set(g, { scale: 1 }, L + '+=0.66');
+    tl.to(g, { x: out.x, y: out.y, duration: 0.18, ease: 'power2.inOut' }, L + '+=0.66');
+    tl.call(() => unuseM(i), null, L + '+=0.84');
+  }
+
+  ride(0);
+  machine(0, KERNEL[0], PORT_OUT[0]);
+  ride(1);
+  machine(1, KERNEL[1], PORT_OUT[1]);
+  ride(2);
+
+  /* 交付 */
+  tl.addLabel('sink', '>');
+  tl.to(g, { x: SINK_PT.x, y: SINK_PT.y, duration: 0.28, ease: 'power2.out' }, 'sink');
+  tl.to(g, { opacity: 0, duration: 0.18 }, 'sink+=0.14');
+
+  return tl;
+}
+
+/* ---------- 发射 / 背压 ---------- */
+function launch(word){
+  if (state.packets.length >= MAX_FLIGHT) return false;
+  const g = makePacketG();
+  $('#packets').appendChild(g);
+  const p = { id: ++state.seq, word, stage: 0, g, tl: null };
+  paintPacket(p);
+  const s0 = SEGS[0].getPointAtLength(0);
+  gsap.set(g, { x: s0.x, y: s0.y, svgOrigin: '0 0' });
+  state.packets.push(p);
+  log('SRC', 'pull → enqueue Uint8Array → "' + word + '"', 'src');
+  hot([2,3,4], 1);
+  p.tl = buildPacketTL(p);
+  applyTime();
+  p.tl.play();
+  return true;
+}
+
+function emit(){
+  const word = ORE[state.emitN++ % ORE.length];
+  if (state.paused || state.packets.length >= MAX_FLIGHT){
+    if (state.queue.length < MAX_QUEUE){
+      state.queue.push(word);
+      log('SRC', '背压：writable 队列堆积 → 缓存 "' + word + '"', 'warn');
+    } else {
+      log('SRC', '背压：队列已满，丢弃上游 pull', 'warn');
+    }
+    renderSrcQueue();
+    return;
+  }
+  launch(word);
+  renderSrcQueue();
+  updateStats();
+}
+
+function drainQueue(){
+  while (state.queue.length && state.packets.length < MAX_FLIGHT && !state.paused){
+    const w = state.queue.shift();
+    launch(w);
+    log('SRC', '背压解除 → 补发缓存 "' + w + '"', 'src');
+  }
+  renderSrcQueue();
+}
+
+function resetAll(){
+  state.packets.forEach(p => { if (p.tl) p.tl.kill(); p.g.remove(); });
+  state.packets = []; state.queue = []; state.sink = [];
+  state.transformed = 0; state.delivered = 0; state.emitN = 0;
+  pipeUse[0] = pipeUse[1] = pipeUse[2] = 0;
+  machUse[0] = machUse[1] = 0;
+  syncPipes(); syncMachines();
+  updateStats(); renderSrcQueue(); renderSink();
+  hot([], 0);
+}
+
+/* ---------- 齿轮常转 ---------- */
+/* ---------- 齿轮（静态，围绕局部 0,0 排 12 个齿） ---------- */
+function buildTeeth(gid, r, w, h, n){
+  const g = $(gid);
+  if (!g) return;
+  while (g.firstChild) g.removeChild(g.firstChild);
+  for (let i = 0; i < n; i++){
+    const t = el('rect', { x:-w/2, y:-r-h+2, width:w, height:h, rx:2, class:'gear-tooth' });
+    t.setAttribute('transform', 'rotate(' + ((360/n)*i) + ')');
+    g.appendChild(t);
+  }
+}
+
+function buildGears(){
+  buildTeeth('#teeth0', 54, 13, 16, 12);
+  buildTeeth('#teeth1', 54, 13, 16, 12);
+}
+
+/* ---------- 自动巡航 ---------- */
+function setAuto(on){
+  state.auto = on;
+  if (autoTween){ autoTween.kill(); autoTween = null; }
+  if (on){
+    emit();
+    autoTween = gsap.to({ v: 0 }, {
+      v: 1, duration: 0.95, repeat: -1, ease: 'none',
+      onRepeat(){ emit(); }
+    });
+  }
+  applyTime();
+}
+
+/* ---------- 入场：管道描边生长 + 标题逐字 ---------- */
+function entrance(){
+  gsap.from('.pipe-body, .pipe-shell, .pipe-bore', {
+    drawSVG: '0% 0%', duration: 0.95, stagger: 0.05, ease: 'power2.inOut', delay: 0.15
+  });
+  gsap.from(['#source', '#m1', '#m2', '#sink'], {
+    y: -26, opacity: 0, duration: 0.7, stagger: 0.1, ease: 'power3.out', delay: 0.1
+  });
+  gsap.from(['.callout', '#annos > g'], {
+    opacity: 0, duration: 0.6, stagger: 0.06, ease: 'power2.out', delay: 0.8
+  });
+
+  if (window.SplitText){
+    const a = new SplitText('.hero .ln-a', { type: 'chars' });
+    const b = new SplitText('.hero .ln-b', { type: 'chars' });
+    gsap.from(a.chars, { y: 46, opacity: 0, duration: 0.8, stagger: 0.04, ease: 'power3.out' });
+    gsap.from(b.chars, { y: 46, opacity: 0, duration: 0.8, stagger: 0.04, ease: 'power3.out', delay: 0.14 });
+  }
+  gsap.from('.hero .chip, .hero .eq', {
+    y: 16, opacity: 0, duration: 0.7, stagger: 0.06, ease: 'power2.out', delay: 0.5
+  });
+}
+
+/* ---------- 控件 ---------- */
+function bindControls(){
+  $('#btnEmit').addEventListener('click', emit);
+
+  $('#btnAuto').addEventListener('click', (e) => {
+    setAuto(!state.auto);
+    e.currentTarget.classList.toggle('on', state.auto);
+    e.currentTarget.textContent = state.auto ? '自动巡航 · 开' : '自动巡航';
+    log('SYS', state.auto ? '自动巡航启动' : '自动巡航停止', 'ret');
+  });
+
+  $('#btnPause').addEventListener('click', (e) => {
+    state.paused = !state.paused;
+    e.currentTarget.classList.toggle('on', state.paused);
+    e.currentTarget.textContent = state.paused ? '继续' : '暂停';
+    applyTime();
+    if (!state.paused) drainQueue();
+    log('SYS', state.paused ? '流水线已暂停' : '流水线继续', 'ret');
+  });
+
+  $('#btnReset').addEventListener('click', () => {
+    resetAll();
+    log('SYS', '流水线已重置', 'ret');
+  });
+
+  $('#speed').addEventListener('input', (e) => {
+    state.speed = parseFloat(e.target.value);
+    $('#speedVal').textContent = state.speed.toFixed(1) + '×';
+    applyTime();
+  });
+}
+
+/* ---------- 启动 ---------- */
+buildCode();
+buildGears();
+bindControls();
+renderSrcQueue();
+renderSink();
+updateStats();
+hot([2,3,4], 1);
+entrance();
+log('SYS', 'STREAM FOUNDRY 就绪 —— 点击「发射 CHUNK」或开自动巡航', 'ret');
+log('SYS', 'pipeThrough(t) = pipeTo(t.writable) + return t.readable', 'ret');
+
+})();
+</script>
+</body>
+</html>
