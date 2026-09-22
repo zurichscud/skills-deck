@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode } from 'react'
-import { Boxes, HardDrive, LayoutDashboard, Moon, Settings, Sun } from 'lucide-react'
+import { LayoutDashboard, Moon, Settings, Sun } from 'lucide-react'
 import { AgentIcon } from '@/components/agent-icons'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -17,9 +17,14 @@ export interface TitleBarProps {
 
 export function TitleBar({ theme, onThemeToggle, actions }: TitleBarProps): ReactElement {
   return (
-    <header className="drag-region flex h-11 shrink-0 items-center gap-3 border-b bg-background pl-[86px] pr-3">
-      <div className="flex shrink-0 items-center gap-2">
+    <header className="drag-region flex h-11 shrink-0 items-center gap-3 border-b bg-sidebar pl-[86px] pr-3">
+      <div className="flex shrink-0 items-center gap-2.5">
         <span className="text-[13px] font-semibold tracking-tight">Skills Deck</span>
+        <span className="flex items-center gap-1" aria-hidden>
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--source-claude)' }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--source-codex)' }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--source-opencode)' }} />
+        </span>
       </div>
 
       <div className="no-drag ml-auto flex shrink-0 items-center gap-1">
@@ -56,26 +61,25 @@ function NavItem({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
-        active ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50'
+        'flex w-full items-center gap-2 border-l-2 px-2 py-1.5 text-left text-[13px] transition-colors',
+        active
+          ? 'border-primary bg-sidebar-accent font-medium text-foreground'
+          : 'border-transparent text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'
       )}
     >
       <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       {count !== undefined && (
-        <span className="tabular-nums text-[11px] text-muted-foreground/70">{count}</span>
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">{count}</span>
       )}
     </button>
   )
 }
 
-function NavSection({ label, icon, children }: { label: string; icon: ReactNode; children: ReactNode }): ReactElement {
+function NavSection({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
     <div>
-      <p className="flex items-center gap-1.5 px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-        <span className="flex h-3 w-3 items-center justify-center">{icon}</span>
-        {label}
-      </p>
+      <p className="px-2 pb-1.5 pt-1 text-[11px] font-medium text-muted-foreground/80">{label}</p>
       {children}
     </div>
   )
@@ -96,8 +100,8 @@ export interface SidebarProps {
 
 export function Sidebar({ view, onViewChange, counts }: SidebarProps): ReactElement {
   return (
-    <aside className="flex w-[212px] shrink-0 flex-col gap-4 overflow-y-auto border-r bg-sidebar px-2 py-3">
-      <NavSection label="总览" icon={<LayoutDashboard className="h-3 w-3" />}>
+    <aside className="flex w-[212px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-sidebar-border bg-sidebar px-2 py-3">
+      <NavSection label="总览">
         <NavItem
           active={view.kind === 'dashboard'}
           label="Dashboard"
@@ -107,7 +111,7 @@ export function Sidebar({ view, onViewChange, counts }: SidebarProps): ReactElem
         />
       </NavSection>
 
-      <NavSection label="存储位置" icon={<HardDrive className="h-3 w-3" />}>
+      <NavSection label="存储位置">
         {SOURCES.map((s) => (
           <NavItem
             key={s}
@@ -120,7 +124,7 @@ export function Sidebar({ view, onViewChange, counts }: SidebarProps): ReactElem
         ))}
       </NavSection>
 
-      <NavSection label="工作区" icon={<Boxes className="h-3 w-3" />}>
+      <NavSection label="工作区">
         {AGENTS.map((a) => (
           <NavItem
             key={a}
@@ -133,7 +137,7 @@ export function Sidebar({ view, onViewChange, counts }: SidebarProps): ReactElem
         ))}
       </NavSection>
 
-      <div className="mt-auto px-2 pt-2">
+      <div className="mt-auto px-0 pt-2">
         <NavItem
           active={view.kind === 'settings'}
           label="设置"

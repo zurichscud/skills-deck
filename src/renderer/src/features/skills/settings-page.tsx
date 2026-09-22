@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useState } from 'react'
-import { FolderOpen, Settings } from 'lucide-react'
+import { FolderOpen } from 'lucide-react'
 import { AgentIcon } from '@/components/agent-icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -87,12 +87,7 @@ export function SettingsPage({ onSave, onBack }: SettingsPageProps): ReactElemen
       <div className="flex min-h-full flex-col">
         <div className="flex shrink-0 items-center gap-4 border-b px-4 py-3">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
-                <Settings className="h-4 w-4" />
-              </span>
-              <h1 className="truncate text-xl font-semibold tracking-tight">设置</h1>
-            </div>
+            <h1 className="truncate text-xl font-semibold tracking-tight">设置</h1>
             <p className="mt-1 truncate text-[12px] text-muted-foreground">
               修改 skill 仓库地址与窗口关闭行为。保存后立即生效并重新扫描。
             </p>
@@ -104,7 +99,7 @@ export function SettingsPage({ onSave, onBack }: SettingsPageProps): ReactElemen
         ) : (
           <div className="mx-auto w-full max-w-2xl space-y-6 p-4">
             <section className="grid gap-3">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">仓库地址</p>
+              <p className="text-[12px] font-medium text-muted-foreground">仓库地址</p>
               {SOURCES.map((s) => pathRow(s, SOURCE_LABEL[s], draft.sourceRoots[s], s))}
               {pathRow('disabledRoot', '停用停车场', draft.disabledRoot)}
               <p className="text-[11px] text-muted-foreground/60">
@@ -115,7 +110,7 @@ export function SettingsPage({ onSave, onBack }: SettingsPageProps): ReactElemen
             <Separator />
 
             <section className="grid gap-2">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">关闭行为</p>
+              <p className="text-[12px] font-medium text-muted-foreground">关闭行为</p>
               <div className="grid gap-1.5">
                 {BEHAVIORS.map((b) => {
                   const active = draft.closeBehavior === b

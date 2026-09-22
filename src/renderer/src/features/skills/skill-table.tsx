@@ -23,6 +23,8 @@ function stateHint(skill: Skill): string {
 export interface SkillTableProps {
   skills: Skill[]
   loading: boolean
+  /** 当前存在搜索词或状态筛选（决定空状态文案） */
+  filtered: boolean
   /** 工作区视图：同一 skill 可能来自多个位置，需要显示位置列 */
   showLocation: boolean
   selectedId: string | null
@@ -41,6 +43,7 @@ export interface SkillTableProps {
 export function SkillTable({
   skills,
   loading,
+  filtered,
   showLocation,
   selectedId,
   pendingIds,
@@ -67,8 +70,17 @@ export function SkillTable({
   if (skills.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-        <p className="text-sm font-medium">没有匹配的 skill</p>
-        <p className="text-[13px] text-muted-foreground">调整搜索词或上方状态筛选再试。</p>
+        {filtered ? (
+          <>
+            <p className="text-sm font-medium">没有匹配的 skill</p>
+            <p className="text-[13px] text-muted-foreground">调整搜索词或上方状态筛选再试。</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-medium">这里还没有 skill</p>
+            <p className="text-[13px] text-muted-foreground">检查设置中的仓库地址，或点击右上角刷新重新扫描。</p>
+          </>
+        )}
       </div>
     )
   }
@@ -77,7 +89,7 @@ export function SkillTable({
     <div className="h-full overflow-auto">
       <table className="w-full min-w-[620px] table-fixed border-collapse text-[13px]">
         <thead className="sticky top-0 z-10 bg-background">
-          <tr className="border-b text-left text-[11px] uppercase tracking-wider text-muted-foreground/70">
+          <tr className="border-b text-left text-[11px] font-medium text-muted-foreground/80">
             <th className="w-8 px-2 py-2">
               <Checkbox checked={allChecked} onCheckedChange={onToggleAll} aria-label="全选" />
             </th>
@@ -98,9 +110,10 @@ export function SkillTable({
                 key={skill.id}
                 onClick={() => onSelect(skill)}
                 className={cn(
-                  'cursor-pointer border-b border-border/50 transition-colors hover:bg-accent/40',
-                  selected && 'bg-accent/60'
+                  'cursor-pointer border-b border-border/50 transition-colors hover:bg-accent/50',
+                  selected && 'bg-accent/70'
                 )}
+                style={selected ? { boxShadow: `inset 2px 0 0 var(--source-${skill.source})` } : undefined}
               >
                 <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
                   <Checkbox

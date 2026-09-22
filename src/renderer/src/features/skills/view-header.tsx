@@ -44,11 +44,11 @@ export function ViewHeader({
   const pathLine =
     view.kind === 'location'
       ? info?.sourceRoots[view.source] ?? '…'
-      : `读取 ${allowed.length} 个位置 · ${scoped.length} 条 skill · ${unique} 个不重复`
+      : `合并读取 ${allowed.length} 个位置，共 ${scoped.length} 条 skill（${unique} 个不重复）`
 
   const statLine =
     view.kind === 'location'
-      ? `${scoped.filter((s) => s.enabled && !s.builtin).length} 启用 / ${scoped.filter((s) => !s.enabled && !s.builtin).length} 停用 / ${scoped.filter((s) => s.builtin).length} 内置`
+      ? `${scoped.filter((s) => s.enabled && !s.builtin).length} 启用，${scoped.filter((s) => !s.enabled && !s.builtin).length} 停用，${scoped.filter((s) => s.builtin).length} 内置`
       : null
 
   return (
@@ -57,15 +57,25 @@ export function ViewHeader({
         <div className="flex items-center gap-2.5">
           <AgentIcon agent={agent} className="h-8 w-8 shrink-0" />
           <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
-          <span className="shrink-0 rounded-full border px-2 py-0.5 text-[12px] tabular-nums text-muted-foreground">
+          <span className="shrink-0 rounded-full border px-2 py-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">
             {scoped.length}
           </span>
           {view.kind === 'workspace' && (
             <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">工作区</span>
           )}
         </div>
-        <p className="mt-1 truncate text-[12px] text-muted-foreground" title={pathLine}>
-          {statLine ? `${pathLine} · ${statLine}` : pathLine}
+        <p className="mt-1 truncate text-[12px] text-muted-foreground" title={pathLine + (statLine ? `；${statLine}` : '')}>
+          {view.kind === 'location' ? (
+            <>
+              <span className="font-mono text-[11.5px]">{pathLine}</span>
+              {statLine && <span>；{statLine}</span>}
+            </>
+          ) : (
+            <>
+              {pathLine}
+              {statLine && `；${statLine}`}
+            </>
+          )}
         </p>
       </div>
 
@@ -97,11 +107,7 @@ export function ViewHeader({
           <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
         </Button>
 
-        <Button
-          size="sm"
-          className="h-9 gap-1.5 rounded-lg bg-emerald-600 px-3.5 text-[13px] text-white hover:bg-emerald-700"
-          onClick={onAdd}
-        >
+        <Button size="sm" className="h-9 gap-1.5 rounded-lg px-3.5 text-[13px]" onClick={onAdd}>
           <Plus className="h-3.5 w-3.5" />
           添加 Skill
         </Button>
