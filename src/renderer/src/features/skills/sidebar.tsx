@@ -10,18 +10,16 @@ const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
 const AGENTS: AgentId[] = ['claude', 'codex', 'opencode']
 
 export interface TitleBarProps {
-  total: number
   theme: 'light' | 'dark'
   onThemeToggle: () => void
   actions?: ReactNode
 }
 
-export function TitleBar({ total, theme, onThemeToggle, actions }: TitleBarProps): ReactElement {
+export function TitleBar({ theme, onThemeToggle, actions }: TitleBarProps): ReactElement {
   return (
     <header className="drag-region flex h-11 shrink-0 items-center gap-3 border-b bg-background pl-[86px] pr-3">
       <div className="flex shrink-0 items-center gap-2">
         <span className="text-[13px] font-semibold tracking-tight">Skills Deck</span>
-        <span className="text-[11px] tabular-nums text-muted-foreground">{total} skills</span>
       </div>
 
       <div className="no-drag ml-auto flex shrink-0 items-center gap-1">
@@ -94,10 +92,9 @@ export interface SidebarProps {
     disabled: number
     builtin: number
   }
-  onOpenSettings: () => void
 }
 
-export function Sidebar({ view, onViewChange, counts, onOpenSettings }: SidebarProps): ReactElement {
+export function Sidebar({ view, onViewChange, counts }: SidebarProps): ReactElement {
   return (
     <aside className="flex w-[212px] shrink-0 flex-col gap-4 overflow-y-auto border-r bg-sidebar px-2 py-3">
       <NavSection label="总览" icon={<LayoutDashboard className="h-3 w-3" />}>
@@ -137,10 +134,12 @@ export function Sidebar({ view, onViewChange, counts, onOpenSettings }: SidebarP
       </NavSection>
 
       <div className="mt-auto px-2 pt-2">
-        <Button variant="outline" size="sm" className="w-full justify-start gap-2 text-[12px]" onClick={onOpenSettings}>
-          <Settings className="h-3.5 w-3.5" />
-          设置
-        </Button>
+        <NavItem
+          active={view.kind === 'settings'}
+          label="设置"
+          icon={<Settings className="h-3.5 w-3.5" />}
+          onClick={() => onViewChange({ kind: 'settings' })}
+        />
       </div>
     </aside>
   )

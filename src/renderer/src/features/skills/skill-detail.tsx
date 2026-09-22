@@ -1,12 +1,10 @@
-import { type ReactElement, useMemo } from 'react'
-import { File, FileText, FolderOpen, Image, Link2, Terminal } from 'lucide-react'
+import { type ReactElement, useEffect, useMemo, useState } from 'react'
+import { ChevronRight, File, FileText, Folder, FolderOpen, Image, Link2, Terminal } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
 import { cn, formatBytes, formatRelativeTime } from '@/lib/utils'
-import { SOURCE_LABEL, type Skill, type SkillFileKind } from '@shared/types'
+import { SOURCE_LABEL, type Skill, type SkillFile, type SkillFileKind } from '@shared/types'
 
 function StatusBadge({ skill }: { skill: Skill }): ReactElement {
   if (skill.builtin) return <Badge variant="outline" className="text-[11px]">内置</Badge>
@@ -36,15 +34,102 @@ function formatValue(v: unknown): string {
   }
 }
 
-export interface SkillDetailProps {
-  skill: Skill | null
-  pending: boolean
-  onSetEnabled: (skill: Skill, next: boolean) => void
-  onCopyTo: (skill: Skill) => void
-  onReveal: (skill: Skill) => void
+type TreeNode =
+  | { type: 'file'; path: string; name: string; file: SkillFile }
+  | { type: 'dir'; path: string; name: string; children: TreeNode[] }
+
+function buildFileTree(files: SkillFile[]): TreeNode[] {
+  const root: TreeNode[] = []
+
+  for (const file of files) {
+    const parts = file.path.split('/').filter(Boolean)
+    let level = root
+    for (let i = 0; i < parts.length; i++) {
+      const name = parts[i]
+      const path = parts.slice(0, i + 1).join('/')
+      const isFile = i === parts.length - 1
+      if (isFile) {
+        level.push({ type: 'file', path, name, file })
+        break
+      }
+      let dir = level.find((n): n is Extract<TreeNode, { type: 'dir' }> => n.type === 'dir' && n.name === name)
+      if (!dir) {
+        dir = { type: 'dir', path, name, children: [] }
+        level.push(dir)
+      }
+      level = dir.children
+    }
+  }
+
+  const sortNodes = (nodes: TreeNode[]): void => {
+    nodes.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+    for (const n of nodes) if (n.type === 'dir') sortNodes(n.children)
+  }
+  sortNodes(root)
+  return root
 }
 
-export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }: SkillDetailProps): ReactElement {
+interface FileTreeProps {
+  nodes: TreeNode[]
+  depth: number
+  collapsed: ReadonlySet<string>
+  onToggle: (path: string) => void
+}
+
+function FileTree({ nodes, depth, collapsed, onToggle }: FileTreeProps): ReactElement {
+  return (
+    <>
+      {nodes.map((node) => {
+        if (node.type === 'file') {
+          const Icon = KIND_META[node.file.kind].icon
+          return (
+            <div
+              key={node.path}
+              className="flex items-center justify-between gap-2 py-0.5 text-[11.5px]"
+              style={{ paddingLeft: depth * 14 + 4 }}
+            >
+              <span className="flex min-w-0 items-center gap-1.5 font-mono text-muted-foreground" title={node.path}>
+                <Icon className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+                <span className="truncate">{node.name}</span>
+              </span>
+              <span className="shrink-0 tabular-nums text-muted-foreground/60">{formatBytes(node.file.size)}</span>
+            </div>
+          )
+        }
+
+        const open = !collapsed.has(node.path)
+        return (
+          <div key={node.path}>
+            <button
+              type="button"
+              onClick={() => onToggle(node.path)}
+              className="flex w-full items-center gap-1 py-0.5 text-left text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+              style={{ paddingLeft: depth * 14 }}
+            >
+              <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', open && 'rotate-90')} />
+              {open ? (
+                <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+              ) : (
+                <Folder className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+              )}
+              <span className="truncate font-mono">{node.name}</span>
+            </button>
+            {open && <FileTree nodes={node.children} depth={depth + 1} collapsed={collapsed} onToggle={onToggle} />}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+export interface SkillDetailProps {
+  skill: Skill | null
+}
+
+export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
   const grouped = useMemo(() => {
     const map = new Map<SkillFileKind, Skill['files']>()
     if (skill) {
@@ -57,16 +142,30 @@ export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }
     return map
   }, [skill])
 
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+
+  useEffect(() => {
+    setCollapsed(new Set())
+  }, [skill?.id])
+
+  const toggleDir = (path: string): void => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
   if (!skill) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <p className="text-sm font-medium text-muted-foreground">未选中 skill</p>
+        <p className="text-sm font-medium text-muted-foreground">未选择</p>
         <p className="text-[13px] text-muted-foreground/70">在左侧列表中选择一项查看详情。</p>
       </div>
     )
   }
 
-  const locked = skill.builtin || skill.entryKind === 'broken'
   const fmEntries = Object.entries(skill.frontmatter)
 
   return (
@@ -106,37 +205,6 @@ export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }
           </p>
         </div>
 
-        <div className="flex items-center justify-between rounded-md border bg-card px-3 py-2">
-          <div>
-            <p className="text-[13px] font-medium">{skill.enabled ? '启用中' : '已停用'}</p>
-            <p className="text-[11px] text-muted-foreground">
-              {skill.enabled ? '对来源工具可见' : '存放在停用停车场'}
-            </p>
-          </div>
-          <Switch
-            checked={skill.enabled}
-            disabled={locked || pending}
-            onCheckedChange={(next) => onSetEnabled(skill, next)}
-            aria-label={`${skill.enabled ? '停用' : '启用'} ${skill.name}`}
-          />
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1 text-[13px]"
-            disabled={skill.builtin}
-            onClick={() => onCopyTo(skill)}
-          >
-            复制到其他来源…
-          </Button>
-          <Button size="sm" variant="outline" className="text-[13px]" onClick={() => onReveal(skill)}>
-            <FolderOpen className="mr-1 h-3.5 w-3.5" />
-            Finder
-          </Button>
-        </div>
-
         {skill.entryKind === 'broken' && skill.linkTarget && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
             <p className="text-[12px] font-medium text-destructive">符号链接失效</p>
@@ -151,18 +219,6 @@ export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }
               <dt className="text-muted-foreground/70">当前位置</dt>
               <dd className="break-all font-mono text-muted-foreground">{skill.dirPath}</dd>
             </div>
-            {!skill.enabled && (
-              <div>
-                <dt className="text-muted-foreground/70">启用位置</dt>
-                <dd className="break-all font-mono text-muted-foreground">{skill.originPath}</dd>
-              </div>
-            )}
-            {skill.entryKind === 'symlink' && skill.linkTarget && (
-              <div>
-                <dt className="text-muted-foreground/70">链接真身</dt>
-                <dd className="break-all font-mono text-muted-foreground">{skill.linkTarget}</dd>
-              </div>
-            )}
           </dl>
         </div>
 
@@ -176,9 +232,9 @@ export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }
           {fmEntries.length === 0 ? (
             <p className="text-[12px] text-muted-foreground/70">（无）</p>
           ) : (
-            <dl className="space-y-1 text-[12px]">
+            <dl className="space-y-2 text-[12px]">
               {fmEntries.map(([k, v]) => (
-                <div key={k} className="grid grid-cols-[88px_1fr] gap-2">
+                <div key={k}>
                   <dt className="truncate font-mono text-muted-foreground/70" title={k}>
                     {k}
                   </dt>
@@ -216,16 +272,9 @@ export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }
                       {meta.label}
                       <span className="tabular-nums">({list.length})</span>
                     </p>
-                    <ul className="space-y-0.5">
-                      {list.map((f) => (
-                        <li key={f.path} className="flex items-center justify-between gap-2 text-[11.5px]">
-                          <span className="truncate font-mono text-muted-foreground" title={f.path}>
-                            {f.path}
-                          </span>
-                          <span className="shrink-0 tabular-nums text-muted-foreground/60">{formatBytes(f.size)}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="rounded-md border bg-muted/20 px-1.5 py-1">
+                      <FileTree nodes={buildFileTree(list)} depth={0} collapsed={collapsed} onToggle={toggleDir} />
+                    </div>
                   </div>
                 )
               })}

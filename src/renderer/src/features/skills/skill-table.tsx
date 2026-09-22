@@ -150,7 +150,7 @@ export function SkillTable({
                       <DropdownMenuItem disabled={skill.builtin} onSelect={() => onCopyTo(skill)}>
                         复制到其他来源…
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => onReveal(skill)}>在 Finder 中显示</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => onReveal(skill)}>打开所在文件夹</DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         disabled={skill.builtin}
@@ -158,10 +158,6 @@ export function SkillTable({
                         onSelect={() => onDelete(skill)}
                       >
                         永久删除…
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem disabled className="font-mono text-[11px] opacity-60">
-                        {skill.id}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

@@ -8,7 +8,7 @@ import { AGENT_SOURCES, type View } from '@/hooks/use-skills'
 import { SOURCE_LABEL, type AppInfo, type Skill, type SkillSource } from '@shared/types'
 
 export interface ViewHeaderProps {
-  view: Exclude<View, { kind: 'dashboard' }>
+  view: Exclude<View, { kind: 'dashboard' | 'settings' }>
   skills: Skill[]
   info: AppInfo | null
   query: string
@@ -19,7 +19,7 @@ export interface ViewHeaderProps {
   onAdd: () => void
 }
 
-function titleOf(view: Exclude<View, { kind: 'dashboard' }>): { agent: SkillSource; title: string } {
+function titleOf(view: Exclude<View, { kind: 'dashboard' | 'settings' }>): { agent: SkillSource; title: string } {
   if (view.kind === 'location') return { agent: view.source, title: SOURCE_LABEL[view.source] }
   return { agent: view.agent as SkillSource, title: SOURCE_LABEL[view.agent as SkillSource] }
 }

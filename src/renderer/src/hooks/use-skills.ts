@@ -7,6 +7,7 @@ export type View =
   | { kind: 'dashboard' }
   | { kind: 'location'; source: SkillSource }
   | { kind: 'workspace'; agent: AgentId }
+  | { kind: 'settings' }
 
 export type StatusFilter = 'all' | 'enabled' | 'disabled' | 'builtin'
 

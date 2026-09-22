@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Ban, Check, PanelRight, X } from 'lucide-react'
+import { Ban, Check, X } from 'lucide-react'
 import { toast, Toaster } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { CopyDialog } from '@/features/skills/copy-dialog'
 import { Dashboard } from '@/features/skills/dashboard'
 import { DeleteDialog } from '@/features/skills/delete-dialog'
-import { SettingsDialog } from '@/features/skills/settings-dialog'
+import { SettingsPage } from '@/features/skills/settings-page'
 import { Sidebar, TitleBar } from '@/features/skills/sidebar'
 import { SkillDetail } from '@/features/skills/skill-detail'
 import { SkillTable } from '@/features/skills/skill-table'
@@ -19,7 +19,6 @@ import {
   type StatusFilter,
   type View
 } from '@/hooks/use-skills'
-import { cn } from '@/lib/utils'
 import type { AppInfo, AppSettings, ConflictStrategy, CopyResult, Skill, SkillSource } from '@shared/types'
 
 type Theme = 'light' | 'dark'
@@ -53,12 +52,16 @@ export default function App(): ReactElement {
   const [deleteTarget, setDeleteTarget] = useState<Skill | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [theme, setTheme] = useState<Theme>(readStoredTheme)
-  const [detailOpen, setDetailOpen] = useState(true)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
   const searchRef = useRef<HTMLInputElement>(null)
+  const lastViewRef = useRef<View>({ kind: 'workspace', agent: 'opencode' })
+  const detailRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (view.kind !== 'settings') lastViewRef.current = view
+  }, [view])
 
   useEffect(() => {
     void window.api.info().then(setInfo)
@@ -163,7 +166,7 @@ export default function App(): ReactElement {
     try {
       await window.api.revealInFinder(skill.id)
     } catch {
-      toast.error('无法打开 Finder')
+      toast.error('无法打开所在文件夹')
     }
   }, [])
 
@@ -243,41 +246,38 @@ export default function App(): ReactElement {
 
   const allChecked = visible.length > 0 && checkedIds.size >= visible.length
   const isDashboard = view.kind === 'dashboard'
+  const isSettings = view.kind === 'settings'
   const showLocation = view.kind === 'workspace'
+
+  useEffect(() => {
+    if (isDashboard || isSettings) return
+    const onPointerDown = (e: PointerEvent): void => {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      if (detailRef.current?.contains(target)) return
+      if (target.closest('tbody tr')) return
+      setSelectedId(null)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [isDashboard, isSettings])
 
   return (
     <TooltipProvider delayDuration={250}>
       <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
         <TitleBar
-          total={skills.length}
           theme={theme}
           onThemeToggle={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-          actions={
-            !isDashboard ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={detailOpen ? 'secondary' : 'ghost'}
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => setDetailOpen((v) => !v)}
-                    aria-label={detailOpen ? '隐藏详情面板' : '显示详情面板'}
-                  >
-                    <PanelRight className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{detailOpen ? '隐藏详情' : '显示详情'}</TooltipContent>
-              </Tooltip>
-            ) : null
-          }
         />
 
         <div className="flex min-h-0 flex-1">
-          <Sidebar view={view} onViewChange={setView} counts={counts} onOpenSettings={() => setSettingsOpen(true)} />
+          <Sidebar view={view} onViewChange={setView} counts={counts} />
 
           <main className="flex min-w-0 flex-1 flex-col">
             {isDashboard ? (
               <Dashboard skills={skills} onJump={setView} />
+            ) : isSettings ? (
+              <SettingsPage onSave={saveSettings} onBack={() => setView(lastViewRef.current)} />
             ) : (
               <>
                 <ViewHeader
@@ -372,15 +372,9 @@ export default function App(): ReactElement {
             )}
           </main>
 
-          {!isDashboard && (
-            <section className={cn('flex-col border-l', detailOpen ? 'flex w-[336px] shrink-0' : 'hidden')}>
-              <SkillDetail
-                skill={selected}
-                pending={selected ? pendingIds.has(selected.id) : false}
-                onSetEnabled={(s, next) => void setEnabled(s, next)}
-                onCopyTo={(s) => setCopyTarget(s)}
-                onReveal={(s) => void reveal(s)}
-              />
+          {!isDashboard && !isSettings && (
+            <section ref={detailRef} className="flex w-[336px] shrink-0 flex-col border-l">
+              <SkillDetail skill={selected} />
             </section>
           )}
         </div>
@@ -400,8 +394,6 @@ export default function App(): ReactElement {
           onClose={() => setDeleteTarget(null)}
           onConfirm={(s) => void doDelete(s)}
         />
-
-        <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} onSave={saveSettings} />
 
         <Toaster theme={theme} richColors closeButton position="bottom-right" />
       </div>
