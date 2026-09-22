@@ -296,13 +296,15 @@ export default function App(): ReactElement {
                 <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3">
                   {checkedIds.size > 0 ? (
                     <>
-                      <span className="text-[12px] tabular-nums text-muted-foreground">已选 {checkedIds.size} 项</span>
+                      <span className="text-[12px] text-muted-foreground">
+                        已选 <span className="font-mono tabular-nums">{checkedIds.size}</span> 项
+                      </span>
                       <Separator orientation="vertical" className="h-4" />
                       <div className="ml-auto flex items-center gap-2">
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 gap-1.5 border-emerald-500/45 text-[12px] text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:border-emerald-500/45 dark:text-emerald-400 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-300"
+                          className="h-7 gap-1.5 border-ok/40 text-[12px] text-ok hover:bg-ok/10 hover:text-ok dark:border-ok/40 dark:hover:bg-ok/10"
                           onClick={() => void batchSetEnabled(true)}
                         >
                           <Check className="h-3.5 w-3.5" />
@@ -311,7 +313,7 @@ export default function App(): ReactElement {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 gap-1.5 border-amber-500/45 text-[12px] text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 dark:border-amber-500/45 dark:text-amber-400 dark:hover:bg-amber-500/10 dark:hover:text-amber-300"
+                          className="h-7 gap-1.5 text-[12px] text-muted-foreground"
                           onClick={() => void batchSetEnabled(false)}
                         >
                           <Ban className="h-3.5 w-3.5" />
@@ -343,7 +345,7 @@ export default function App(): ReactElement {
                           </Button>
                         ))}
                       </div>
-                      <span className="ml-auto text-[12px] tabular-nums text-muted-foreground/60">
+                      <span className="ml-auto font-mono text-[11.5px] tabular-nums text-muted-foreground/70">
                         {loading ? '加载中…' : `${visible.length} 条结果`}
                       </span>
                     </>
@@ -354,6 +356,7 @@ export default function App(): ReactElement {
                   <SkillTable
                     skills={visible}
                     loading={loading}
+                    filtered={query.trim() !== '' || status !== 'all'}
                     showLocation={showLocation}
                     selectedId={selectedId}
                     pendingIds={pendingIds}
@@ -373,7 +376,7 @@ export default function App(): ReactElement {
           </main>
 
           {!isDashboard && !isSettings && (
-            <section ref={detailRef} className="flex w-[336px] shrink-0 flex-col border-l">
+            <section ref={detailRef} className="flex w-[336px] shrink-0 flex-col border-l border-sidebar-border bg-sidebar">
               <SkillDetail skill={selected} />
             </section>
           )}

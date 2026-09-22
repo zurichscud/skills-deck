@@ -9,11 +9,13 @@ import { SOURCE_LABEL, type Skill, type SkillFile, type SkillFileKind } from '@s
 function StatusBadge({ skill }: { skill: Skill }): ReactElement {
   if (skill.builtin) return <Badge variant="outline" className="text-[11px]">内置</Badge>
   if (skill.entryKind === 'broken') return <Badge variant="destructive" className="text-[11px]">失效</Badge>
-  return (
-    <Badge variant={skill.enabled ? 'default' : 'secondary'} className="text-[11px]">
-      {skill.enabled ? '启用' : '停用'}
-    </Badge>
-  )
+  if (skill.enabled)
+    return (
+      <Badge variant="outline" className="border-ok/40 text-[11px] text-ok">
+        启用
+      </Badge>
+    )
+  return <Badge variant="secondary" className="text-[11px]">停用</Badge>
 }
 
 const KIND_META: Record<SkillFileKind, { label: string; icon: typeof File }> = {
@@ -24,7 +26,7 @@ const KIND_META: Record<SkillFileKind, { label: string; icon: typeof File }> = {
 }
 
 function formatValue(v: unknown): string {
-  if (v == null) return '—'
+  if (v == null) return '无'
   if (typeof v === 'string') return v
   if (typeof v === 'number' || typeof v === 'boolean') return String(v)
   try {
@@ -160,8 +162,8 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
   if (!skill) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <p className="text-sm font-medium text-muted-foreground">未选择</p>
-        <p className="text-[13px] text-muted-foreground/70">在左侧列表中选择一项查看详情。</p>
+        <p className="text-sm font-medium text-muted-foreground">未选择 skill</p>
+        <p className="text-[13px] text-muted-foreground/70">在列表中选择一项，这里会显示路径、frontmatter 和文件。</p>
       </div>
     )
   }
@@ -213,7 +215,7 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
         )}
 
         <div>
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">路径</p>
+          <p className="mb-2 text-[11px] font-medium text-muted-foreground">路径</p>
           <dl className="space-y-1.5 text-[11.5px]">
             <div>
               <dt className="text-muted-foreground/70">当前位置</dt>
@@ -226,7 +228,7 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
 
         <div>
           <div className="mb-2 flex items-baseline justify-between">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Frontmatter</p>
+            <p className="text-[11px] font-medium text-muted-foreground">Frontmatter</p>
             <span className="text-[11px] text-muted-foreground/60">{fmEntries.length} 字段</span>
           </div>
           {fmEntries.length === 0 ? (
@@ -251,9 +253,9 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
 
         <div>
           <div className="mb-2 flex items-baseline justify-between">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">文件</p>
+            <p className="text-[11px] font-medium text-muted-foreground">文件</p>
             <span className="text-[11px] text-muted-foreground/60">
-              {skill.files.length} 个 · {formatBytes(skill.byteSize)}
+              {skill.files.length} 个，共 {formatBytes(skill.byteSize)}
             </span>
           </div>
           {skill.files.length === 0 ? (
@@ -282,8 +284,8 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
           )}
         </div>
 
-        <p className={cn('pb-2 text-[10.5px] text-muted-foreground/50')}>
-          更新于 {skill.mtime ? formatRelativeTime(skill.mtime) : '—'}
+        <p className={cn('pb-2 text-[10.5px] text-muted-foreground/60')}>
+          {skill.mtime ? `更新于 ${formatRelativeTime(skill.mtime)}` : '更新时间未知'}
         </p>
       </div>
     </ScrollArea>

@@ -104,7 +104,7 @@ export function SettingsPage({ onSave, onBack }: SettingsPageProps): ReactElemen
         ) : (
           <div className="mx-auto w-full max-w-2xl space-y-6 p-4">
             <section className="grid gap-3">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">仓库地址</p>
+              <p className="text-[12px] font-medium text-muted-foreground">仓库地址</p>
               {SOURCES.map((s) => pathRow(s, SOURCE_LABEL[s], draft.sourceRoots[s], s))}
               {pathRow('disabledRoot', '停用停车场', draft.disabledRoot)}
               <p className="text-[11px] text-muted-foreground/60">
@@ -115,7 +115,7 @@ export function SettingsPage({ onSave, onBack }: SettingsPageProps): ReactElemen
             <Separator />
 
             <section className="grid gap-2">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">关闭行为</p>
+              <p className="text-[12px] font-medium text-muted-foreground">关闭行为</p>
               <div className="grid gap-1.5">
                 {BEHAVIORS.map((b) => {
                   const active = draft.closeBehavior === b
