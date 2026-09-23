@@ -7,6 +7,7 @@ import {
 } from '@shared/types'
 import { type ReactElement, useState } from 'react'
 
+import { AgentIcon } from '@/components/agent-icons'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,12 +29,6 @@ import {
 } from '@/components/ui/dialog'
 
 const TARGETS: SkillSource[] = ['claude', 'codex', 'opencode']
-
-const DOT: Record<SkillSource, string> = {
-  claude: 'var(--source-claude)',
-  codex: 'var(--source-codex)',
-  opencode: 'var(--source-opencode)',
-}
 
 export interface CopyDialogProps {
   skill: Skill | null
@@ -111,7 +106,7 @@ export function CopyDialog({
                   disabled={disabled || busy}
                   onClick={() => setTarget(t)}
                 >
-                  <span className="h-2 w-2 rounded-full" style={{ background: DOT[t] }} />
+                  <AgentIcon agent={t} className="h-4 w-4" />
                   {SOURCE_LABEL[t]}
                   {disabled && <span className="ml-auto text-[11px] opacity-60">当前来源</span>}
                 </Button>

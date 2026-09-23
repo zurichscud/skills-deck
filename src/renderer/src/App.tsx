@@ -272,9 +272,10 @@ export default function App(): ReactElement {
     [reload],
   )
 
-  /** 切换菜单：重置状态筛选 tab，避免带着上一个视图的筛选进入新视图 */
+  /** 切换菜单：清空搜索词并重置状态筛选 tab，避免带着上一个视图的筛选进入新视图 */
   const changeView = useCallback((next: View) => {
     setView(next)
+    setQuery('')
     setStatus('all')
   }, [])
 
@@ -397,7 +398,7 @@ export default function App(): ReactElement {
                             key={t.key}
                             size="sm"
                             variant={status === t.key ? 'secondary' : 'ghost'}
-                            className="h-6 gap-1.5 px-2 text-[12px]"
+                            className="h-6 gap-1.5 px-2 text-[12px] transition-none active:scale-100"
                             onClick={() => setStatus(t.key)}
                           >
                             {t.label}
