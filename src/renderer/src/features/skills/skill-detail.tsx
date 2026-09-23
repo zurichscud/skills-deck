@@ -1,5 +1,14 @@
-import { SOURCE_LABEL, type Skill, type SkillFile, type SkillFileKind } from '@shared/types'
 import {
+  SKILL_SOURCES,
+  SOURCE_LABEL,
+  type LinkState,
+  type Skill,
+  type SkillFile,
+  type SkillFileKind,
+  type SkillSource,
+} from '@shared/types'
+import {
+  AlertTriangle,
   ChevronRight,
   File,
   FileText,
@@ -7,38 +16,91 @@ import {
   FolderOpen,
   Image,
   Link2,
+  Link2Off,
   Terminal,
 } from 'lucide-react'
 import { type ReactElement, useMemo, useState } from 'react'
 
+import { AgentIcon } from '@/components/agent-icons'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { isActive } from '@/hooks/use-skills'
 import { cn, formatBytes, formatRelativeTime } from '@/lib/utils'
 
 function StatusBadge({ skill }: { skill: Skill }): ReactElement {
-  if (skill.builtin)
+  if (skill.kind === 'builtin')
     return (
       <Badge variant="outline" className="text-[11px]">
         内置
       </Badge>
     )
-  if (skill.entryKind === 'broken')
-    return (
+  if (skill.kind === 'external') {
+    return skill.links[skill.origin as SkillSource]?.state === 'broken' ? (
       <Badge variant="destructive" className="text-[11px]">
         失效
       </Badge>
+    ) : (
+      <Badge variant="outline" className="border-warn/50 text-[11px] text-warn">
+        未纳管
+      </Badge>
     )
-  if (skill.enabled)
+  }
+  if (isActive(skill))
     return (
       <Badge variant="outline" className="border-ok/40 text-[11px] text-ok">
-        启用
+        已启用
       </Badge>
     )
   return (
     <Badge variant="secondary" className="text-[11px]">
-      停用
+      未启用
     </Badge>
+  )
+}
+
+const LINK_LABEL: Record<LinkState, string> = {
+  linked: '已启用',
+  absent: '未启用',
+  broken: '失效软链',
+  conflict: '被占用',
+  native: '内置可用',
+}
+
+const LINK_STYLE: Record<LinkState, string> = {
+  linked: 'text-ok',
+  absent: 'text-muted-foreground/60',
+  broken: 'text-warn',
+  conflict: 'text-warn',
+  native: 'text-muted-foreground/70',
+}
+
+function LinkRow({ skill, source }: { skill: Skill; source: SkillSource }): ReactElement | null {
+  const link = skill.links[source]
+  if (skill.kind === 'external' && skill.origin !== source) return null
+
+  return (
+    <div className="flex items-start gap-2 py-1.5">
+      <AgentIcon agent={source} className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-[12px]">{SOURCE_LABEL[source]}</span>
+          <span className={cn('text-[11px]', LINK_STYLE[link.state])}>
+            {LINK_LABEL[link.state]}
+          </span>
+        </div>
+        {link.path && (
+          <p className="mt-0.5 font-mono text-[10.5px] break-all text-muted-foreground/60">
+            {link.path}
+          </p>
+        )}
+        {link.target && link.state !== 'linked' && (
+          <p className="mt-0.5 font-mono text-[10.5px] break-all text-muted-foreground/60">
+            → {link.target}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -200,13 +262,17 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <p className="text-sm font-medium text-muted-foreground">未选择 skill</p>
         <p className="text-[13px] text-muted-foreground/70">
-          在列表中选择一项，这里会显示路径、frontmatter 和文件。
+          在列表中选择一项，这里会显示链接状态、路径、frontmatter 和文件。
         </p>
       </div>
     )
   }
 
   const fmEntries = Object.entries(skill.frontmatter)
+  const brokenExternal =
+    skill.kind === 'external' &&
+    skill.origin !== null &&
+    skill.links[skill.origin].state === 'broken'
 
   return (
     <ScrollArea className="h-full">
@@ -219,48 +285,57 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
             <StatusBadge skill={skill} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <Badge variant="outline" className="gap-1.5 text-[11px]">
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{
-                  background:
-                    skill.source === 'claude'
-                      ? 'var(--source-claude)'
-                      : skill.source === 'codex'
-                        ? 'var(--source-codex)'
-                        : 'var(--source-opencode)',
-                }}
-              />
-              {SOURCE_LABEL[skill.source]}
-            </Badge>
-            {skill.entryKind === 'symlink' && (
+            {skill.kind === 'central' && (
               <Badge variant="outline" className="gap-1 text-[11px]">
                 <Link2 className="h-3 w-3" />
-                符号链接
+                中央仓库
               </Badge>
             )}
-            {skill.entryKind === 'broken' && <Badge variant="destructive">链接失效</Badge>}
-            {skill.builtin && <Badge variant="secondary">内置</Badge>}
+            {skill.kind === 'builtin' && <Badge variant="secondary">Codex 内置</Badge>}
+            {skill.kind === 'external' && (
+              <Badge variant="outline" className="gap-1 border-warn/50 text-[11px] text-warn">
+                <Link2Off className="h-3 w-3" />
+                未纳管
+              </Badge>
+            )}
           </div>
           <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">
             {skill.description || '（无描述）'}
           </p>
         </div>
 
-        {skill.entryKind === 'broken' && skill.linkTarget && (
+        {brokenExternal && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
-            <p className="text-[12px] font-medium text-destructive">符号链接失效</p>
-            <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground">
-              → {skill.linkTarget}
+            <p className="flex items-center gap-1.5 text-[12px] font-medium text-destructive">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              符号链接失效
             </p>
           </div>
         )}
 
+        {skill.kind !== 'external' && (
+          <>
+            <Separator />
+            <div>
+              <p className="mb-1 text-[11px] font-medium text-muted-foreground">启用状态</p>
+              <div className="divide-y divide-border/50">
+                {SKILL_SOURCES.map((source) => (
+                  <LinkRow key={source} skill={skill} source={source} />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        <Separator />
+
         <div>
-          <p className="mb-2 text-[11px] font-medium text-muted-foreground">路径</p>
+          <p className="mb-2 text-[11px] font-medium text-muted-foreground">
+            {skill.kind === 'central' ? '真身路径' : '所在路径'}
+          </p>
           <dl className="space-y-1.5 text-[11.5px]">
             <div>
-              <dt className="text-muted-foreground/70">当前位置</dt>
+              <dt className="text-muted-foreground/70">目录</dt>
               <dd className="font-mono break-all text-muted-foreground">{skill.dirPath}</dd>
             </div>
           </dl>

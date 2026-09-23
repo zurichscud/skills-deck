@@ -1,4 +1,4 @@
-import type { Skill } from '@shared/types'
+import { SKILL_SOURCES, SOURCE_LABEL, type Skill } from '@shared/types'
 import { AlertTriangle } from 'lucide-react'
 import { type ReactElement } from 'react'
 
@@ -29,8 +29,14 @@ export function DeleteDialog({
 }: DeleteDialogProps): ReactElement | null {
   if (!skill) return null
 
-  const isLink = skill.entryKind === 'symlink'
-  const isBroken = skill.entryKind === 'broken'
+  const isCentral = skill.kind === 'central'
+  const isExternal = skill.kind === 'external'
+  const links = isCentral
+    ? SKILL_SOURCES.filter((s) => skill.links[s].state === 'linked').map((s) => ({
+        source: s,
+        path: skill.links[s].path,
+      }))
+    : []
 
   return (
     <AlertDialog open>
@@ -42,32 +48,56 @@ export function DeleteDialog({
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2 text-[13px]">
-              <p>
-                将从 <span className="font-mono">{skill.source}</span> 中<b>永久删除</b>该条目，
-                <b>不进入停用停车场、不可恢复</b>。
-              </p>
-
-              <div className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-[11.5px] break-all">
-                {skill.dirPath}
-              </div>
-
-              {isLink && (
-                <p className="text-muted-foreground">
-                  这是符号链接，<b>只会删除链接本身</b>。真身保留在：
-                  <span className="mt-1 block font-mono text-[11px] break-all">
-                    {skill.linkTarget ?? '（未知）'}
-                  </span>
-                  其它来源中指向同一真身的链接不受影响。
-                </p>
-              )}
-              {isBroken && (
-                <p className="text-muted-foreground">这是一个已失效的符号链接，仅删除链接残骸。</p>
-              )}
-              {!isLink && !isBroken && (
-                <p className="text-muted-foreground">
-                  这是真实目录，其中 <b>{skill.files.length}</b> 个文件（共{' '}
-                  {formatBytes(skill.byteSize)}）将被一并永久删除。
-                </p>
+              {isCentral ? (
+                <>
+                  <p>
+                    将从中央仓库中<b>永久删除真身</b>，并清理指向它的软链。
+                    <b>不可恢复</b>（若已提交 git，可从历史中找回）。
+                  </p>
+                  <div className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-[11.5px] break-all">
+                    {skill.dirPath}
+                  </div>
+                  <p className="text-muted-foreground">
+                    这是真实目录，其中 <b>{skill.files.length}</b> 个文件（共{' '}
+                    {formatBytes(skill.byteSize)}）将被一并删除。
+                  </p>
+                  {links.length > 0 ? (
+                    <div className="text-muted-foreground">
+                      同时移除以下软链：
+                      <ul className="mt-1 space-y-0.5 font-mono text-[11px] break-all">
+                        {links.map((l) => (
+                          <li key={l.source}>
+                            {SOURCE_LABEL[l.source]}：{l.path}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">当前没有任何存储位置链接到它。</p>
+                  )}
+                  <p className="text-[12px] text-muted-foreground/70">
+                    其它未纳管位置（如 ~/.agents/skills）中的同名链接不会被清理，会变成失效链接。
+                  </p>
+                </>
+              ) : isExternal ? (
+                <>
+                  <p>
+                    这是一个<b>未纳管</b>条目，将直接从其所在位置删除，<b>不可恢复</b>。
+                  </p>
+                  <div className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-[11.5px] break-all">
+                    {skill.dirPath}
+                  </div>
+                  {skill.links[skill.origin ?? 'claude']?.state === 'broken' ? (
+                    <p className="text-muted-foreground">这是失效的软链残骸，仅删除链接本身。</p>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      这是真实目录，其中 <b>{skill.files.length}</b> 个文件（共{' '}
+                      {formatBytes(skill.byteSize)}）将被一并删除。
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p>内置 skill 不可删除。</p>
               )}
             </div>
           </AlertDialogDescription>

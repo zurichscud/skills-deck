@@ -22,7 +22,6 @@ import { AgentIcon } from '@/components/agent-icons'
 import { Switch } from '@/components/ui/switch'
 import {
   MENU_GROUP_LABEL,
-  MENU_GROUP_ORDER,
   menuItemById,
   reorderMenuGroup,
   resolveMenuIds,
@@ -124,7 +123,10 @@ export interface MenuEditorProps {
   onChange: (menu: MenuPrefs) => void
 }
 
-/** 侧边栏菜单编辑器：组内拖拽排序 + 逐个显隐 */
+/**
+ * 侧边栏菜单编辑器：组内拖拽排序 + 逐个显隐。
+ * 只编辑可配置项（存储位置 / 工作区）；总览与中央仓库是常驻项，不出现在这里。
+ */
 export function MenuEditor({ menu, onChange }: MenuEditorProps): ReactElement {
   const ordered = useMemo(
     () =>
@@ -134,10 +136,11 @@ export function MenuEditor({ menu, onChange }: MenuEditorProps): ReactElement {
     [menu],
   )
   const hidden = useMemo(() => new Set<string>(menu.hidden), [menu])
+  const groups = useMemo(() => [...new Set(ordered.map((item) => item.group))], [ordered])
 
   return (
     <div className="grid gap-4">
-      {MENU_GROUP_ORDER.map((group) => {
+      {groups.map((group) => {
         const items = ordered.filter((item) => item.group === group)
         if (items.length === 0) return null
         return (

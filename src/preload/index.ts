@@ -1,11 +1,12 @@
 import type {
+  ActionResult,
+  AdoptAction,
   AppSettings,
-  CopyResult,
-  CopyStrategy,
-  SetEnabledResult,
+  ImportResult,
   Skill,
   SkillApi,
   SkillSource,
+  UnmanagedSkill,
 } from '@shared/types'
 import { contextBridge, ipcRenderer } from 'electron'
 
@@ -21,23 +22,27 @@ const api: SkillApi = {
       }
       return String(r ?? '')
     }),
-  setEnabled: (skillId: string, enabled: boolean): Promise<SetEnabledResult> =>
-    ipcRenderer.invoke('skills:setEnabled', skillId, enabled),
-  copyTo: (skillId: string, target: SkillSource, strategy: CopyStrategy): Promise<CopyResult> =>
-    ipcRenderer.invoke('skills:copyTo', skillId, target, strategy),
-  deleteSkill: (skillId: string): Promise<SetEnabledResult> =>
+  link: (skillId: string, source: SkillSource): Promise<ActionResult> =>
+    ipcRenderer.invoke('skills:link', skillId, source),
+  unlink: (skillId: string, source: SkillSource): Promise<ActionResult> =>
+    ipcRenderer.invoke('skills:unlink', skillId, source),
+  importSkill: (path?: string): Promise<ImportResult> => ipcRenderer.invoke('skills:import', path),
+  unmanaged: (): Promise<UnmanagedSkill[]> => ipcRenderer.invoke('skills:unmanaged'),
+  adoptUnmanaged: (itemId: string, action: AdoptAction): Promise<ActionResult> =>
+    ipcRenderer.invoke('skills:adoptUnmanaged', itemId, action),
+  deleteSkill: (skillId: string): Promise<ActionResult> =>
     ipcRenderer.invoke('skills:delete', skillId),
   revealInFinder: (skillId: string): Promise<void> =>
     ipcRenderer.invoke('skills:revealInFinder', skillId),
-  openSourceRoot: (source: SkillSource): Promise<SetEnabledResult> =>
-    ipcRenderer.invoke('skills:openSourceRoot', source),
+  openPath: (target: 'central' | SkillSource): Promise<ActionResult> =>
+    ipcRenderer.invoke('skills:openPath', target),
   onChanged: (listener: () => void): (() => void) => {
     const handler = (): void => listener()
     ipcRenderer.on('skills:changed', handler)
     return () => ipcRenderer.removeListener('skills:changed', handler)
   },
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
-  saveSettings: (next: AppSettings): Promise<SetEnabledResult> =>
+  saveSettings: (next: AppSettings): Promise<ActionResult> =>
     ipcRenderer.invoke('settings:save', next),
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('settings:pickDirectory'),
 }

@@ -35,6 +35,7 @@
   --sidebar-border: #e4e4e7;
   --sidebar-ring: #c9284f;
   --ok: #15803d;
+  --warn: #b45309;
   --source-claude: #d97757;
   --source-codex: #5b8def;
   --source-opencode: #34b487;
@@ -70,6 +71,7 @@
   --sidebar-border: #27272a;
   --sidebar-ring: #d63257;
   --ok: #4ade80;
+  --warn: #fbbf24;
   --source-claude: #e2855e;
   --source-codex: #7aa1f5;
   --source-opencode: #4bc49a;
@@ -104,6 +106,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-ok: var(--ok);
+  --color-warn: var(--warn);
   --color-source-claude: var(--source-claude);
   --color-source-codex: var(--source-codex);
   --color-source-opencode: var(--source-opencode);

@@ -1,15 +1,17 @@
 import {
   CLOSE_BEHAVIOR_LABEL,
   SOURCE_LABEL,
+  type AppInfo,
   type AppSettings,
   type CloseBehavior,
   type MenuPrefs,
   type SkillSource,
 } from '@shared/types'
-import { FolderOpen, Settings } from 'lucide-react'
+import { FolderOpen, GitBranch, Package, Settings, Sparkles } from 'lucide-react'
 import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react'
 
 import { AgentIcon } from '@/components/agent-icons'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,9 +26,18 @@ const BEHAVIORS: CloseBehavior[] = ['ask', 'tray', 'quit']
 export interface SettingsPageProps {
   onSave: (next: AppSettings) => Promise<boolean>
   version?: string
+  info: AppInfo | null
+  unmanaged: { total: number; conflicts: number } | null
+  onOpenUnmanaged: () => void
 }
 
-export function SettingsPage({ onSave, version }: SettingsPageProps): ReactElement {
+export function SettingsPage({
+  onSave,
+  version,
+  info,
+  unmanaged,
+  onOpenUnmanaged,
+}: SettingsPageProps): ReactElement {
   const [draft, setDraft] = useState<AppSettings | null>(null)
   const savedRef = useRef<AppSettings | null>(null)
 
@@ -51,22 +62,22 @@ export function SettingsPage({ onSave, version }: SettingsPageProps): ReactEleme
     void commit(draft)
   }, [draft, commit])
 
-  const setPath = (key: 'disabledRoot' | SkillSource, value: string): void => {
+  const setPath = (key: 'centralRoot' | SkillSource, value: string): void => {
     setDraft((prev) =>
       !prev
         ? prev
-        : key === 'disabledRoot'
-          ? { ...prev, disabledRoot: value }
+        : key === 'centralRoot'
+          ? { ...prev, centralRoot: value }
           : { ...prev, sourceRoots: { ...prev.sourceRoots, [key]: value } },
     )
   }
 
-  const pick = async (key: 'disabledRoot' | SkillSource): Promise<void> => {
+  const pick = async (key: 'centralRoot' | SkillSource): Promise<void> => {
     const dir = await window.api.pickDirectory()
     if (!dir || !draft) return
     const next =
-      key === 'disabledRoot'
-        ? { ...draft, disabledRoot: dir }
+      key === 'centralRoot'
+        ? { ...draft, centralRoot: dir }
         : { ...draft, sourceRoots: { ...draft.sourceRoots, [key]: dir } }
     setDraft(next)
     void commit(next)
@@ -87,14 +98,18 @@ export function SettingsPage({ onSave, version }: SettingsPageProps): ReactEleme
   }
 
   const pathRow = (
-    key: 'disabledRoot' | SkillSource,
+    key: 'centralRoot' | SkillSource,
     label: string,
     value: string,
-    icon?: SkillSource,
+    icon?: SkillSource | 'central',
   ): ReactElement => (
     <div key={key} className="grid grid-cols-[112px_1fr_auto] items-center gap-2">
       <Label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        {icon ? <AgentIcon agent={icon} className="h-3.5 w-3.5" /> : null}
+        {icon === 'central' ? (
+          <Package className="h-3.5 w-3.5" />
+        ) : icon ? (
+          <AgentIcon agent={icon} className="h-3.5 w-3.5" />
+        ) : null}
         {label}
       </Label>
       <Input
@@ -150,12 +165,67 @@ export function SettingsPage({ onSave, version }: SettingsPageProps): ReactEleme
         ) : (
           <div className="mx-auto w-full max-w-2xl space-y-6 p-4">
             <section className="grid gap-3">
-              <p className="text-[12px] font-medium text-muted-foreground">仓库地址</p>
-              {SOURCES.map((s) => pathRow(s, SOURCE_LABEL[s], draft.sourceRoots[s], s))}
-              {pathRow('disabledRoot', '停用停车场', draft.disabledRoot)}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[12px] font-medium text-muted-foreground">中央仓库</p>
+                {info && (
+                  <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <GitBranch className="h-3 w-3" />
+                    {info.git.available ? (
+                      info.git.lastCommit ? (
+                        <span className="font-mono">{info.git.lastCommit}</span>
+                      ) : (
+                        'git 已就绪，暂无提交'
+                      )
+                    ) : (
+                      <span className="text-warn">未检测到 git，改动不会自动提交</span>
+                    )}
+                  </span>
+                )}
+              </div>
+              {pathRow('centralRoot', '真身目录', draft.centralRoot, 'central')}
               <p className="text-[11px] text-muted-foreground/60">
-                停用的 skill 会被移动到「停用停车场」，启用后移回对应来源目录。
+                所有 skill 的唯一真身都存放在这里，并由 git
+                记录每次结构变更；各存储位置只放指向它的软链。
               </p>
+            </section>
+
+            <Separator />
+
+            <section className="grid gap-3">
+              <p className="text-[12px] font-medium text-muted-foreground">存储位置</p>
+              {SOURCES.map((s) => pathRow(s, SOURCE_LABEL[s], draft.sourceRoots[s], s))}
+              <p className="text-[11px] text-muted-foreground/60">
+                各 agent 读取 skill
+                的全局目录；启用即在此创建软链，停用即删除软链，真身始终留在中央仓库。
+              </p>
+            </section>
+
+            <Separator />
+
+            <section className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-[13px] font-medium">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  未纳管的 Skill
+                </p>
+                <p className="mt-0.5 text-[12px] text-muted-foreground">
+                  {unmanaged
+                    ? `三个存储位置里有 ${unmanaged.total} 个 skill 尚未纳入中央仓库${
+                        unmanaged.conflicts > 0
+                          ? `，其中 ${unmanaged.conflicts} 个同名需你决定`
+                          : ''
+                      }。`
+                    : '三个存储位置里的 skill 都已在中央仓库管理之下。'}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-[12.5px]"
+                onClick={onOpenUnmanaged}
+              >
+                查看未纳管
+              </Button>
             </section>
 
             <Separator />
@@ -210,9 +280,21 @@ export function SettingsPage({ onSave, version }: SettingsPageProps): ReactEleme
               </div>
               <MenuEditor menu={draft.menu} onChange={changeMenu} />
             </section>
+
+            {info && (
+              <p className="pb-2 font-mono text-[10.5px] text-muted-foreground/50">
+                配置目录 {info.managedRoot}
+              </p>
+            )}
           </div>
         )}
       </div>
     </ScrollArea>
   )
+}
+
+export function GitBadge({ info }: { info: AppInfo | null }): ReactElement | null {
+  if (!info) return null
+  if (!info.git.available) return <Badge variant="outline">无 git</Badge>
+  return <Badge variant="outline">{info.git.lastCommit ?? '暂无提交'}</Badge>
 }

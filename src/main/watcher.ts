@@ -1,8 +1,8 @@
-import type { SkillSource } from '@shared/types'
+import { SKILL_SOURCES } from '@shared/types'
 import chokidar from 'chokidar'
 import { BrowserWindow } from 'electron'
 
-import { disabledRoot, disabledSourceRootFor, sourceRootFor } from './paths'
+import { centralRoot, sourceRootFor } from './paths'
 
 const DEBOUNCE_MS = 350
 
@@ -16,12 +16,7 @@ function shouldIgnore(p: string): boolean {
 }
 
 export function startWatcher(onChange: () => void): () => void {
-  const sources: SkillSource[] = ['claude', 'codex', 'opencode']
-  const roots = [
-    ...sources.map((s) => sourceRootFor(s)),
-    disabledRoot(),
-    ...sources.map((s) => disabledSourceRootFor(s)),
-  ]
+  const roots = [centralRoot(), ...SKILL_SOURCES.map((s) => sourceRootFor(s))]
 
   let timer: NodeJS.Timeout | null = null
   const fire = (): void => {

@@ -11,7 +11,7 @@ const ENV_SOURCE: Record<SkillSource, string> = {
 
 interface PathOverrides {
   sourceRoots: Partial<Record<SkillSource, string>>
-  disabledRoot?: string
+  centralRoot?: string
 }
 
 const overrides: PathOverrides = { sourceRoots: {} }
@@ -19,7 +19,7 @@ const overrides: PathOverrides = { sourceRoots: {} }
 /** 由 config.ts 在加载/保存后写入；环境变量优先级高于配置，便于测试隔离 */
 export function applyPathOverrides(next: PathOverrides): void {
   overrides.sourceRoots = { ...next.sourceRoots }
-  overrides.disabledRoot = next.disabledRoot
+  overrides.centralRoot = next.centralRoot
 }
 
 function defaultSourceRootFor(source: SkillSource): string {
@@ -56,25 +56,25 @@ export function managedRoot(): string {
   return join(xdg, 'skillsdeck')
 }
 
-/** 停用停车场——可在设置中改址 */
-export function disabledRoot(): string {
-  const fromEnv = process.env['SKILLSDECK_DISABLED_ROOT']
+/** 中央仓库根目录：唯一真身存放处，git 管理；可在设置中改址 */
+export function centralRoot(): string {
+  const fromEnv = process.env['SKILLSDECK_CENTRAL_ROOT']
   if (fromEnv) return fromEnv
-  return overrides.disabledRoot ?? join(managedRoot(), 'disabled')
-}
-
-export function disabledDirFor(source: SkillSource, relDir: string): string {
-  return join(disabledRoot(), source, relDir)
+  return overrides.centralRoot ?? join(homedir(), '.skills-deck', 'skills')
 }
 
 export function sourceDirFor(source: SkillSource, relDir: string): string {
   return join(sourceRootFor(source), relDir)
 }
 
-export function disabledSourceRootFor(source: SkillSource): string {
-  return join(disabledRoot(), source)
+export function centralDirFor(relDir: string): string {
+  return join(centralRoot(), relDir)
 }
 
-export function makeSkillId(source: SkillSource, relDir: string): string {
-  return `${source}:${relDir}`
+export function makeSkillId(kind: 'central' | 'builtin', relDir: string): string {
+  return kind === 'central' ? `central:${relDir}` : `builtin:codex:${relDir}`
+}
+
+export function makeExternalId(source: SkillSource, relDir: string): string {
+  return `external:${source}:${relDir}`
 }

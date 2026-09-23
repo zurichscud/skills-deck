@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import {
   MENU_ITEM_IDS,
+  SKILL_SOURCES,
   type AppSettings,
   type CloseBehavior,
   type MenuItemId,
@@ -10,15 +11,14 @@ import {
   type SkillSource,
 } from '@shared/types'
 
-import { applyPathOverrides, disabledRoot, managedRoot, sourceRootFor } from './paths'
+import { applyPathOverrides, centralRoot, managedRoot, sourceRootFor } from './paths'
 
-const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
 const CLOSE_BEHAVIORS: CloseBehavior[] = ['ask', 'tray', 'quit']
 const MENU_IDS = new Set<string>(MENU_ITEM_IDS)
 
 interface RawConfig {
+  centralRoot?: string
   sourceRoots?: Partial<Record<SkillSource, string>>
-  disabledRoot?: string
   closeBehavior?: CloseBehavior
   menu?: unknown
 }
@@ -59,18 +59,18 @@ function normalizeMenu(raw: unknown): MenuPrefs {
 
 function normalize(raw: RawConfig): AppSettings {
   const sourceRoots = {} as Record<SkillSource, string>
-  for (const s of SOURCES) {
+  for (const s of SKILL_SOURCES) {
     const v = raw.sourceRoots?.[s]
     sourceRoots[s] = typeof v === 'string' && v.trim() ? v.trim() : sourceRootFor(s)
   }
-  const disabled =
-    typeof raw.disabledRoot === 'string' && raw.disabledRoot.trim()
-      ? raw.disabledRoot.trim()
-      : disabledRoot()
+  const central =
+    typeof raw.centralRoot === 'string' && raw.centralRoot.trim()
+      ? raw.centralRoot.trim()
+      : centralRoot()
   const closeBehavior = CLOSE_BEHAVIORS.includes(raw.closeBehavior as CloseBehavior)
     ? (raw.closeBehavior as CloseBehavior)
     : 'ask'
-  return { sourceRoots, disabledRoot: disabled, closeBehavior, menu: normalizeMenu(raw.menu) }
+  return { centralRoot: central, sourceRoots, closeBehavior, menu: normalizeMenu(raw.menu) }
 }
 
 export async function loadSettings(): Promise<AppSettings> {
@@ -78,7 +78,7 @@ export async function loadSettings(): Promise<AppSettings> {
   // 先清空覆盖再求默认值，避免把上一次覆盖当成默认
   applyPathOverrides({ sourceRoots: {} })
   const effective = normalize(raw)
-  applyPathOverrides({ sourceRoots: effective.sourceRoots, disabledRoot: effective.disabledRoot })
+  applyPathOverrides({ sourceRoots: effective.sourceRoots, centralRoot: effective.centralRoot })
   cache = effective
   return effective
 }
@@ -86,12 +86,12 @@ export async function loadSettings(): Promise<AppSettings> {
 export function currentSettings(): AppSettings {
   return (
     cache ?? {
+      centralRoot: centralRoot(),
       sourceRoots: {
         claude: sourceRootFor('claude'),
         codex: sourceRootFor('codex'),
         opencode: sourceRootFor('opencode'),
       },
-      disabledRoot: disabledRoot(),
       closeBehavior: 'ask',
       menu: { order: [], hidden: [] },
     }
@@ -100,8 +100,8 @@ export function currentSettings(): AppSettings {
 
 export async function saveSettings(next: AppSettings): Promise<void> {
   const raw: RawConfig = {
+    centralRoot: next.centralRoot,
     sourceRoots: { ...next.sourceRoots },
-    disabledRoot: next.disabledRoot,
     closeBehavior: next.closeBehavior,
     menu: normalizeMenu(next.menu),
   }

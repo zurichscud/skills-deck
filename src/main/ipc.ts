@@ -1,33 +1,45 @@
 import { join } from 'node:path'
 
 import type {
+  ActionResult,
+  AdoptAction,
   AppInfo,
   AppSettings,
-  CopyResult,
-  CopyStrategy,
-  SetEnabledResult,
+  ImportResult,
   Skill,
   SkillSource,
+  UnmanagedSkill,
 } from '@shared/types'
 import { BrowserWindow, Tray, app, dialog, ipcMain, nativeImage, shell } from 'electron'
 
 import { currentSettings, loadSettings, saveSettings } from './config'
-import { disabledRoot, managedRoot, sourceRootFor } from './paths'
+import { ensureRepo, isGitAvailable, lastCommit } from './git'
+import { centralRoot, managedRoot, sourceRootFor } from './paths'
+import { scanUnmanaged } from './scanner'
 import { skillStore } from './store'
 import { broadcastSkillsChanged, startWatcher } from './watcher'
 
 export function registerIpc(): void {
-  ipcMain.handle('skills:info', (): AppInfo => ({
-    platform: process.platform as AppInfo['platform'],
-    version: app.getVersion(),
-    managedRoot: managedRoot(),
-    disabledRoot: disabledRoot(),
-    sourceRoots: {
-      claude: sourceRootFor('claude'),
-      codex: sourceRootFor('codex'),
-      opencode: sourceRootFor('opencode'),
-    },
-  }))
+  ipcMain.handle('skills:info', async (): Promise<AppInfo> => {
+    const central = centralRoot()
+    const available = await isGitAvailable()
+    return {
+      platform: process.platform as AppInfo['platform'],
+      version: app.getVersion(),
+      managedRoot: managedRoot(),
+      centralRoot: central,
+      sourceRoots: {
+        claude: sourceRootFor('claude'),
+        codex: sourceRootFor('codex'),
+        opencode: sourceRootFor('opencode'),
+      },
+      git: {
+        available,
+        repoReady: available ? await ensureRepo(central) : false,
+        lastCommit: await lastCommit(central),
+      },
+    }
+  })
 
   ipcMain.handle('skills:list', (): Skill[] => skillStore.list())
 
@@ -42,50 +54,65 @@ export function registerIpc(): void {
   )
 
   ipcMain.handle(
-    'skills:setEnabled',
-    async (_e, skillId: string, enabled: boolean): Promise<SetEnabledResult> => {
-      const result = await skillStore.setEnabled(skillId, enabled)
+    'skills:link',
+    async (_e, skillId: string, source: SkillSource): Promise<ActionResult> => {
+      const result = await skillStore.link(skillId, source)
       if (result.ok) broadcastSkillsChanged()
       return result
     },
   )
 
   ipcMain.handle(
-    'skills:copyTo',
-    async (
-      _e,
-      skillId: string,
-      target: SkillSource,
-      strategy: CopyStrategy,
-    ): Promise<CopyResult> => {
-      const result = await skillStore.copyTo(skillId, target, strategy)
+    'skills:unlink',
+    async (_e, skillId: string, source: SkillSource): Promise<ActionResult> => {
+      const result = await skillStore.unlink(skillId, source)
       if (result.ok) broadcastSkillsChanged()
       return result
     },
   )
+
+  ipcMain.handle('skills:import', async (_e, path?: string): Promise<ImportResult> => {
+    let srcPath = path
+    if (!srcPath) {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+      const picked = await dialog.showOpenDialog(win, {
+        title: '选择要导入中央仓库的 skill 目录',
+        message: '所选目录需包含 SKILL.md',
+        properties: ['openDirectory'],
+      })
+      if (picked.canceled || picked.filePaths.length === 0) {
+        return { ok: false, code: 'IO', message: '已取消' }
+      }
+      srcPath = picked.filePaths[0]
+    }
+    const result = await skillStore.importSkill(srcPath)
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
+
+  ipcMain.handle('skills:delete', async (_e, skillId: string): Promise<ActionResult> => {
+    const result = await skillStore.deleteSkill(skillId)
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
 
   ipcMain.handle('skills:revealInFinder', (_e, skillId: string) =>
     skillStore.revealInFinder(skillId),
   )
 
   ipcMain.handle(
-    'skills:openSourceRoot',
-    async (_e, source: SkillSource): Promise<SetEnabledResult> => {
-      const err = await shell.openPath(sourceRootFor(source))
+    'skills:openPath',
+    async (_e, target: 'central' | SkillSource): Promise<ActionResult> => {
+      const path = target === 'central' ? centralRoot() : sourceRootFor(target)
+      const err = await shell.openPath(path)
       if (err) return { ok: false, code: 'IO', message: err }
       return { ok: true }
     },
   )
 
-  ipcMain.handle('skills:delete', async (_e, skillId: string): Promise<SetEnabledResult> => {
-    const result = await skillStore.deleteSkill(skillId)
-    if (result.ok) broadcastSkillsChanged()
-    return result
-  })
-
   ipcMain.handle('settings:get', async (): Promise<AppSettings> => currentSettings())
 
-  ipcMain.handle('settings:save', async (_e, next: AppSettings): Promise<SetEnabledResult> => {
+  ipcMain.handle('settings:save', async (_e, next: AppSettings): Promise<ActionResult> => {
     try {
       await saveSettings(next)
       await skillStore.refresh()
@@ -104,6 +131,17 @@ export function registerIpc(): void {
     })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
   })
+
+  ipcMain.handle('skills:unmanaged', (): Promise<UnmanagedSkill[]> => scanUnmanaged())
+
+  ipcMain.handle(
+    'skills:adoptUnmanaged',
+    async (_e, itemId: string, action: AdoptAction): Promise<ActionResult> => {
+      const result = await skillStore.adoptUnmanaged(itemId, action)
+      if (result.ok) broadcastSkillsChanged()
+      return result
+    },
+  )
 
   void loadSettings().then(async () => {
     await skillStore.init()
@@ -174,8 +212,4 @@ export function wireCloseBehavior(win: BrowserWindow, onShow: () => void): void 
         }
       })
   })
-}
-
-export async function pickDirectoryForSettings(): Promise<void> {
-  await shell.openPath(managedRoot())
 }

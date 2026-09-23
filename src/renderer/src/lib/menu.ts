@@ -9,12 +9,13 @@ import {
 
 import type { View } from '@/hooks/use-skills'
 
-export type MenuGroup = 'overview' | 'location' | 'workspace'
+export type MenuGroup = 'overview' | 'repository' | 'location' | 'workspace'
 
-export const MENU_GROUP_ORDER: MenuGroup[] = ['overview', 'location', 'workspace']
+export const MENU_GROUP_ORDER: MenuGroup[] = ['overview', 'repository', 'location', 'workspace']
 
 export const MENU_GROUP_LABEL: Record<MenuGroup, string> = {
   overview: '总览',
+  repository: '中央仓库',
   location: '存储位置',
   workspace: '工作区',
 }
@@ -24,15 +25,30 @@ export interface MenuItemDef {
   group: MenuGroup
   label: string
   view: View
-  /** dashboard 之外的项目对应的来源，用于渲染品牌图标 */
+  /** location / workspace 项对应的来源，用于渲染品牌图标 */
   source?: SkillSource
+  /** 常驻项：始终显示在侧边栏，不参与排序与显隐配置 */
+  fixed?: boolean
 }
 
 const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
 
 /** 默认顺序即 MENU_ITEM_IDS 的声明顺序 */
 export const MENU_ITEMS: MenuItemDef[] = [
-  { id: 'dashboard', group: 'overview', label: 'Dashboard', view: { kind: 'dashboard' } },
+  {
+    id: 'dashboard',
+    group: 'overview',
+    label: 'Dashboard',
+    view: { kind: 'dashboard' },
+    fixed: true,
+  },
+  {
+    id: 'repository',
+    group: 'repository',
+    label: '全部 Skill',
+    view: { kind: 'repository' },
+    fixed: true,
+  },
   ...SOURCES.map<MenuItemDef>((s) => ({
     id: `location:${s}`,
     group: 'location',
@@ -61,13 +77,15 @@ export function resolveMenuIds(menu: MenuPrefs = DEFAULT_MENU_PREFS): MenuItemId
   return [...menu.order, ...MENU_ITEM_IDS.filter((id) => !known.has(id))]
 }
 
-/** 侧边栏实际渲染的菜单项：用户顺序 + 过滤隐藏项 */
+/** 侧边栏实际渲染的菜单项：常驻项 + 用户顺序 + 过滤隐藏项 */
 export function resolveMenu(menu: MenuPrefs = DEFAULT_MENU_PREFS): MenuItemDef[] {
   const hidden = new Set<string>(menu.hidden)
-  return resolveMenuIds(menu)
+  const fixed = MENU_ITEMS.filter((m) => m.fixed)
+  const configurable = resolveMenuIds(menu)
     .filter((id) => !hidden.has(id))
     .map((id) => MENU_BY_ID.get(id))
     .filter((m): m is MenuItemDef => !!m)
+  return [...fixed, ...configurable]
 }
 
 /** 组内拖拽排序：只调整该组的相对顺序，组间位置不变 */

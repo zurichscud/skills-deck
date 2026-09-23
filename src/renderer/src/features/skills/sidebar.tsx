@@ -1,5 +1,5 @@
 import { type MenuItemId, type MenuPrefs, type SkillSource } from '@shared/types'
-import { LayoutDashboard, Moon, Settings, Sun } from 'lucide-react'
+import { LayoutDashboard, Moon, Package, Settings, Sun } from 'lucide-react'
 import { type ReactElement, type ReactNode } from 'react'
 
 import { AgentIcon } from '@/components/agent-icons'
@@ -81,10 +81,11 @@ export interface SidebarProps {
   menu: MenuPrefs
   counts: {
     all: number
+    central: number
     bySource: Record<SkillSource, number>
     byAgent: Record<AgentId, number>
-    enabled: number
-    disabled: number
+    linked: number
+    unlinked: number
     builtin: number
   }
 }
@@ -100,6 +101,7 @@ function isViewActive(current: View, target: View): boolean {
 
 function countFor(id: MenuItemId, counts: SidebarProps['counts']): number {
   if (id === 'dashboard') return counts.all
+  if (id === 'repository') return counts.central
   const [kind, source] = id.split(':') as ['location' | 'workspace', SkillSource]
   return kind === 'location' ? counts.bySource[source] : counts.byAgent[source]
 }
@@ -134,6 +136,8 @@ export function Sidebar({ view, onViewChange, menu, counts }: SidebarProps): Rea
                 icon={
                   item.source ? (
                     <AgentIcon agent={item.source} className="h-3.5 w-3.5" />
+                  ) : item.id === 'repository' ? (
+                    <Package className="h-3.5 w-3.5" />
                   ) : (
                     <LayoutDashboard className="h-3.5 w-3.5" />
                   )
