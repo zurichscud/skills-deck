@@ -1,8 +1,11 @@
 import type {
   ActionResult,
   AdoptAction,
+  AdoptAllResult,
   AppSettings,
+  FailResult,
   ImportResult,
+  InstallFromGitResult,
   Skill,
   SkillApi,
   SkillSource,
@@ -27,9 +30,15 @@ const api: SkillApi = {
   unlink: (skillId: string, source: SkillSource): Promise<ActionResult> =>
     ipcRenderer.invoke('skills:unlink', skillId, source),
   importSkill: (path?: string): Promise<ImportResult> => ipcRenderer.invoke('skills:import', path),
+  installFromGit: (url: string): Promise<InstallFromGitResult | FailResult> =>
+    ipcRenderer.invoke('skills:installFromGit', url),
   unmanaged: (): Promise<UnmanagedSkill[]> => ipcRenderer.invoke('skills:unmanaged'),
   adoptUnmanaged: (itemId: string, action: AdoptAction): Promise<ActionResult> =>
     ipcRenderer.invoke('skills:adoptUnmanaged', itemId, action),
+  adoptAllUnmanaged: (): Promise<AdoptAllResult | FailResult> =>
+    ipcRenderer.invoke('skills:adoptAllUnmanaged'),
+  adoptManyUnmanaged: (itemIds: string[]): Promise<AdoptAllResult | FailResult> =>
+    ipcRenderer.invoke('skills:adoptManyUnmanaged', itemIds),
   deleteSkill: (skillId: string): Promise<ActionResult> =>
     ipcRenderer.invoke('skills:delete', skillId),
   revealInFinder: (skillId: string): Promise<void> =>

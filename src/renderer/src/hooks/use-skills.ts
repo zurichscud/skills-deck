@@ -6,6 +6,7 @@ export type AgentId = SkillSource
 export type View =
   | { kind: 'dashboard' }
   | { kind: 'repository' }
+  | { kind: 'unmanaged' }
   | { kind: 'location'; source: SkillSource }
   | { kind: 'workspace'; agent: AgentId }
   | { kind: 'settings' }
@@ -27,10 +28,18 @@ export function isCodexView(view: View): boolean {
 }
 
 /** 列表视图（非 dashboard / settings） */
-export type ListView = Extract<View, { kind: 'repository' | 'location' | 'workspace' }>
+export type ListView = Extract<
+  View,
+  { kind: 'repository' | 'unmanaged' | 'location' | 'workspace' }
+>
 
 export function isListView(view: View): view is ListView {
-  return view.kind === 'repository' || view.kind === 'location' || view.kind === 'workspace'
+  return (
+    view.kind === 'repository' ||
+    view.kind === 'unmanaged' ||
+    view.kind === 'location' ||
+    view.kind === 'workspace'
+  )
 }
 
 /** 该 skill 是否在指定存储位置可用（链接生效或内置天然可用） */
@@ -48,11 +57,17 @@ export function isActive(skill: Skill): boolean {
 /**
  * skill 是否出现在指定视图中。
  * - 中央仓库：只看真身
+ * - 未纳管：只看三个存储位置里没指向中央仓库真身的条目
  * - 存储位置：该位置的启用清单——全部候选真身（含尚未链接的）+ 未纳管条目 + codex 内置
  * - 工作区：该 agent 读取范围内的一切——全部候选真身 + 相关未纳管条目 + codex 内置
  */
 export function skillInView(skill: Skill, view: View): boolean {
   if (view.kind === 'repository') return skill.kind === 'central'
+  if (view.kind === 'unmanaged') {
+    // 与「未纳管的 Skill」弹窗同一口径：断链残骸没有内容可纳入，不列入
+    if (skill.kind !== 'external' || skill.origin === null) return false
+    return skill.links[skill.origin].state !== 'broken'
+  }
 
   if (view.kind === 'location') {
     if (skill.kind === 'central') return true

@@ -3,9 +3,12 @@ import { join } from 'node:path'
 import type {
   ActionResult,
   AdoptAction,
+  AdoptAllResult,
   AppInfo,
   AppSettings,
+  FailResult,
   ImportResult,
+  InstallFromGitResult,
   Skill,
   SkillSource,
   UnmanagedSkill,
@@ -90,6 +93,15 @@ export function registerIpc(): void {
     return result
   })
 
+  ipcMain.handle(
+    'skills:installFromGit',
+    async (_e, url: string): Promise<InstallFromGitResult | FailResult> => {
+      const result = await skillStore.installFromGit(url)
+      if (result.ok) broadcastSkillsChanged()
+      return result
+    },
+  )
+
   ipcMain.handle('skills:delete', async (_e, skillId: string): Promise<ActionResult> => {
     const result = await skillStore.deleteSkill(skillId)
     if (result.ok) broadcastSkillsChanged()
@@ -138,6 +150,24 @@ export function registerIpc(): void {
     'skills:adoptUnmanaged',
     async (_e, itemId: string, action: AdoptAction): Promise<ActionResult> => {
       const result = await skillStore.adoptUnmanaged(itemId, action)
+      if (result.ok) broadcastSkillsChanged()
+      return result
+    },
+  )
+
+  ipcMain.handle(
+    'skills:adoptAllUnmanaged',
+    async (): Promise<AdoptAllResult | FailResult> => {
+      const result = await skillStore.adoptAllUnmanaged()
+      if (result.ok) broadcastSkillsChanged()
+      return result
+    },
+  )
+
+  ipcMain.handle(
+    'skills:adoptManyUnmanaged',
+    async (_e, itemIds: string[]): Promise<AdoptAllResult | FailResult> => {
+      const result = await skillStore.adoptManyUnmanaged(itemIds)
       if (result.ok) broadcastSkillsChanged()
       return result
     },

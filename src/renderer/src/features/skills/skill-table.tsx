@@ -165,6 +165,8 @@ export function SkillTable({
   onDelete,
 }: SkillTableProps): ReactElement {
   const switchSource = switchSourceFor(view)
+  /** 未纳管视图：来源图标代替链接开关，操作只保留「纳入中央仓库 / 删除」 */
+  const isUnmanaged = view.kind === 'unmanaged'
 
   if (loading) {
     return (
@@ -211,9 +213,14 @@ export function SkillTable({
             </th>
             <th className="w-[190px] px-2 py-2">名称</th>
             <th className="px-2 py-2">描述</th>
-            <th className="w-[132px] px-2 py-2">类型</th>
-            <th className={cn('px-2 py-2', switchSource ? 'w-[64px]' : 'w-[112px]')}>
-              {switchSource ? '启用' : '链接'}
+            {!isUnmanaged && <th className="w-[132px] px-2 py-2">类型</th>}
+            <th
+              className={cn(
+                'px-2 py-2',
+                isUnmanaged ? 'w-[64px]' : switchSource ? 'w-[64px]' : 'w-[112px]',
+              )}
+            >
+              {isUnmanaged ? '来源' : switchSource ? '启用' : '链接'}
             </th>
             <th className="w-10 px-1 py-2">
               <span className="sr-only">操作</span>
@@ -264,23 +271,32 @@ export function SkillTable({
                     {skill.description || '无'}
                   </span>
                 </td>
-                <td className="px-2 py-2">
-                  <span
-                    className={cn(
-                      'block truncate text-[11.5px]',
-                      skill.kind === 'external'
-                        ? 'text-warn'
-                        : skill.kind === 'builtin'
-                          ? 'text-muted-foreground/70'
-                          : 'text-muted-foreground',
-                    )}
-                    title={skill.dirPath}
-                  >
-                    {typeLabel(skill)}
-                  </span>
-                </td>
+                {!isUnmanaged && (
+                  <td className="px-2 py-2">
+                    <span
+                      className={cn(
+                        'block truncate text-[11.5px]',
+                        skill.kind === 'external'
+                          ? 'text-warn'
+                          : skill.kind === 'builtin'
+                            ? 'text-muted-foreground/70'
+                            : 'text-muted-foreground',
+                      )}
+                      title={skill.dirPath}
+                    >
+                      {typeLabel(skill)}
+                    </span>
+                  </td>
+                )}
                 <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
-                  {switchSource ? (
+                  {isUnmanaged ? (
+                    <span
+                      className="flex h-6 w-6 items-center justify-center"
+                      title={skill.origin ? `来源：${SOURCE_LABEL[skill.origin]}` : undefined}
+                    >
+                      {skill.origin && <AgentIcon agent={skill.origin} className="h-3.5 w-3.5" />}
+                    </span>
+                  ) : switchSource ? (
                     <EnableSwitch
                       skill={skill}
                       source={switchSource}
@@ -316,25 +332,39 @@ export function SkillTable({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="text-[13px]">
-                      {skill.kind === 'external' && (
+                      {isUnmanaged ? (
                         <>
                           <DropdownMenuItem onSelect={() => onAdopt()}>
                             纳入中央仓库…
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
+                          <DropdownMenuItem variant="destructive" onSelect={() => onDelete(skill)}>
+                            删除
+                          </DropdownMenuItem>
+                        </>
+                      ) : (
+                        <>
+                          {skill.kind === 'external' && (
+                            <>
+                              <DropdownMenuItem onSelect={() => onAdopt()}>
+                                纳入中央仓库…
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
+                          <DropdownMenuItem onSelect={() => onReveal(skill)}>
+                            打开所在文件夹
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            disabled={skill.kind === 'builtin'}
+                            variant="destructive"
+                            onSelect={() => onDelete(skill)}
+                          >
+                            删除
+                          </DropdownMenuItem>
                         </>
                       )}
-                      <DropdownMenuItem onSelect={() => onReveal(skill)}>
-                        打开所在文件夹
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={skill.kind === 'builtin'}
-                        variant="destructive"
-                        onSelect={() => onDelete(skill)}
-                      >
-                        删除
-                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </td>

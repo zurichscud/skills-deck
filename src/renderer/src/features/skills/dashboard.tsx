@@ -1,9 +1,15 @@
 import { SOURCE_LABEL, type Skill, type SkillSource } from '@shared/types'
-import { AlertTriangle, ChevronRight, Package, Sparkles } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Package, Sparkles } from 'lucide-react'
 import { type ReactElement } from 'react'
 
 import { AgentIcon } from '@/components/agent-icons'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   AGENT_SOURCES,
@@ -15,16 +21,26 @@ import {
 } from '@/hooks/use-skills'
 import { formatBytes } from '@/lib/utils'
 
+import { ImportMenu, type ImportMode } from './import-menu'
+
 const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
 const AGENTS: AgentId[] = ['claude', 'codex', 'opencode']
 
 export interface DashboardProps {
   skills: Skill[]
   onJump: (view: View) => void
-  unmanaged: { total: number; conflicts: number; onOpen: () => void } | null
+  /** 导入入口：只写入中央仓库 */
+  onImport: (mode: ImportMode) => void
+  unmanaged: {
+    total: number
+    conflicts: number
+    busy: boolean
+    onOpen: () => void
+    onAdoptAll: () => void
+  } | null
 }
 
-export function Dashboard({ skills, onJump, unmanaged }: DashboardProps): ReactElement {
+export function Dashboard({ skills, onJump, onImport, unmanaged }: DashboardProps): ReactElement {
   const central = skills.filter((s) => s.kind === 'central')
   const builtin = skills.filter((s) => s.kind === 'builtin')
   const external = skills.filter((s) => s.kind === 'external')
@@ -37,33 +53,58 @@ export function Dashboard({ skills, onJump, unmanaged }: DashboardProps): ReactE
   return (
     <ScrollArea className="h-full">
       <div className="flex max-w-5xl flex-col gap-7 p-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-[13px] text-muted-foreground">
-            中央仓库是唯一真身，各 agent 目录只放指向它的软链。
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+            <p className="mt-1 text-[13px] text-muted-foreground">
+              中央仓库是唯一真身，各 agent 目录只放指向它的软链。
+            </p>
+          </div>
+          <ImportMenu onImport={onImport} />
         </div>
 
         {unmanaged && (
-          <div className="flex items-start gap-3 rounded-md border border-primary/40 bg-primary/5 px-3.5 py-3">
-            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <div className="min-w-0 flex-1">
-              <p className="text-[12.5px] font-medium">
-                发现 {unmanaged.total} 个未纳入中央仓库的 skill
-              </p>
-              <p className="mt-1 text-[12px] text-muted-foreground">
-                {unmanaged.conflicts > 0
-                  ? `其中 ${unmanaged.conflicts} 个与中央仓库同名，需要你决定如何取舍。`
-                  : '逐个纳入即可让三个 agent 共享同一份真身。'}
-              </p>
-            </div>
-            <Button
-              size="sm"
-              className="h-8 shrink-0 gap-1.5 text-[12.5px]"
-              onClick={unmanaged.onOpen}
-            >
-              逐个处理
-            </Button>
+          <div className="flex items-center gap-3 rounded-md border border-primary/40 bg-primary/5 px-3.5 py-3">
+            <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+            <p className="min-w-0 flex-1 text-[12.5px] font-medium">
+              发现 {unmanaged.total} 个未纳入中央仓库的 skill
+            </p>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  className="h-8 shrink-0 gap-1.5 text-[12.5px]"
+                  disabled={unmanaged.busy}
+                >
+                  {unmanaged.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  去处理
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 text-[13px]">
+                <DropdownMenuItem onSelect={() => unmanaged.onOpen()}>
+                  <div className="min-w-0">
+                    <p>由我决定</p>
+                    <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                      逐个查看，自己选择处理方式
+                    </p>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={unmanaged.total - unmanaged.conflicts === 0}
+                  onSelect={() => unmanaged.onAdoptAll()}
+                >
+                  <div className="min-w-0">
+                    <p>一键导入</p>
+                    <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                      {unmanaged.conflicts > 0
+                        ? `${unmanaged.total - unmanaged.conflicts} 个直接纳入，${unmanaged.conflicts} 个同名冲突留给你决定`
+                        : `全部 ${unmanaged.total} 个直接纳入中央仓库`}
+                    </p>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
 

@@ -9,13 +9,12 @@ import {
 
 import type { View } from '@/hooks/use-skills'
 
-export type MenuGroup = 'overview' | 'repository' | 'location' | 'workspace'
+export type MenuGroup = 'overview' | 'location' | 'workspace'
 
-export const MENU_GROUP_ORDER: MenuGroup[] = ['overview', 'repository', 'location', 'workspace']
+export const MENU_GROUP_ORDER: MenuGroup[] = ['overview', 'location', 'workspace']
 
 export const MENU_GROUP_LABEL: Record<MenuGroup, string> = {
   overview: '总览',
-  repository: '中央仓库',
   location: '存储位置',
   workspace: '工作区',
 }
@@ -44,9 +43,16 @@ export const MENU_ITEMS: MenuItemDef[] = [
   },
   {
     id: 'repository',
-    group: 'repository',
-    label: '全部 Skill',
+    group: 'overview',
+    label: '中央仓库',
     view: { kind: 'repository' },
+    fixed: true,
+  },
+  {
+    id: 'unmanaged',
+    group: 'overview',
+    label: '未纳管',
+    view: { kind: 'unmanaged' },
     fixed: true,
   },
   ...SOURCES.map<MenuItemDef>((s) => ({

@@ -4,16 +4,20 @@ import { basename, dirname, join, resolve, sep } from 'node:path'
 import type {
   ActionResult,
   AdoptAction,
+  AdoptAllResult,
   FailResult,
   ImportResult,
+  InstallFromGitResult,
   Skill,
   SkillSource,
+  UnmanagedSkill,
 } from '@shared/types'
 import { SKILL_SOURCES } from '@shared/types'
 
 import { autoCommit } from './git'
+import { cloneSkillsDir, validateRepoUrl, type RepoSkill } from './install'
 import { SKILL_ENTRY_FILE } from './parse'
-import { centralDirFor, centralRoot, sourceDirFor } from './paths'
+import { centralDirFor, centralRoot, managedRoot, sourceDirFor } from './paths'
 import { scanAll, scanUnmanaged } from './scanner'
 
 function fail(code: FailResult['code'], message: string, conflictAt?: string): FailResult {
@@ -30,6 +34,29 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+const RETRY_DELAYS_MS = [100, 200, 400, 800, 1200, 1600]
+const RETRYABLE_CODES = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'])
+
+function delay(ms: number): Promise<void> {
+  return new Promise((done) => setTimeout(done, ms))
+}
+
+/**
+ * Windows 上杀软、索引器、编辑器会短暂占用刚变动的目录，表现为 EBUSY/EPERM。
+ * 退避重试覆盖绝大多数瞬时占用，超出后如实报错。
+ */
+async function withRetry<T>(op: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await op()
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? ''
+      if (!RETRYABLE_CODES.has(code) || attempt >= RETRY_DELAYS_MS.length) throw err
+      await delay(RETRY_DELAYS_MS[attempt]!)
+    }
+  }
+}
+
 async function isSymlink(p: string): Promise<boolean> {
   try {
     return (await fs.lstat(p)).isSymbolicLink()
@@ -40,18 +67,30 @@ async function isSymlink(p: string): Promise<boolean> {
 
 async function symlinkDir(target: string, linkPath: string): Promise<void> {
   const type = process.platform === 'win32' ? 'junction' : 'dir'
-  await fs.symlink(target, linkPath, type)
+  await withRetry(() => fs.symlink(target, linkPath, type))
 }
 
 async function removeEntry(p: string): Promise<void> {
-  if (await isSymlink(p)) await fs.unlink(p)
-  else await fs.rm(p, { recursive: true, force: true })
+  if (await isSymlink(p)) await withRetry(() => fs.unlink(p))
+  else await withRetry(() => fs.rm(p, { recursive: true, force: true }))
 }
 
-/** 丢弃本地副本，原地改为指向中央仓库真身的软链 */
-async function replaceWithLink(localPath: string, target: string): Promise<void> {
-  await removeEntry(localPath)
-  await symlinkDir(target, localPath)
+/** 解引用复制整个目录（软链来源得到独立真身） */
+async function copyDir(src: string, dest: string): Promise<void> {
+  await withRetry(() => fs.cp(src, dest, { recursive: true, dereference: true, force: true }))
+}
+
+async function removeQuietly(p: string): Promise<void> {
+  await fs.rm(p, { recursive: true, force: true }).catch(() => undefined)
+}
+
+async function copyQuietly(src: string, dest: string): Promise<boolean> {
+  try {
+    await copyDir(src, dest)
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function resolveFreeName(dir: string, name: string): Promise<string> {
@@ -68,6 +107,8 @@ export interface ImportOptions {
   name?: string
   /** 已存在同名时覆盖；否则自动改名共存 */
   overwrite?: boolean
+  /** 是否立即 git 提交（批量导入时由调用方统一提交） */
+  commit?: boolean
 }
 
 export class SkillStore {
@@ -126,7 +167,7 @@ export class SkillStore {
     try {
       await fs.mkdir(dirname(target), { recursive: true })
       // 断链残骸可安全替换：只删链接本体
-      if (state === 'broken') await fs.rm(target, { force: true })
+      if (state === 'broken') await withRetry(() => fs.rm(target, { force: true }))
       await symlinkDir(skill.dirPath, target)
     } catch (err) {
       await this.safeRefresh()
@@ -150,7 +191,7 @@ export class SkillStore {
     }
 
     try {
-      await fs.unlink(link.path)
+      await withRetry(() => fs.unlink(link.path))
     } catch (err) {
       await this.safeRefresh()
       return fail('IO', `移除链接失败：${(err as Error).message}`)
@@ -179,7 +220,7 @@ export class SkillStore {
 
     if (await exists(destDir)) {
       if (options.overwrite) {
-        await fs.rm(destDir, { recursive: true, force: true })
+        await removeEntry(destDir)
       } else {
         destName = await resolveFreeName(root, wanted)
       }
@@ -187,15 +228,54 @@ export class SkillStore {
 
     const finalDir = join(root, destName)
     try {
-      await fs.cp(srcPath, finalDir, { recursive: true, dereference: true, force: true })
+      await copyDir(srcPath, finalDir)
     } catch (err) {
-      await fs.rm(finalDir, { recursive: true, force: true }).catch(() => undefined)
+      await removeQuietly(finalDir)
       return fail('IO', `导入失败：${(err as Error).message}`)
     }
 
-    await autoCommit(root, `import: ${destName}`)
+    if (options.commit !== false) await autoCommit(root, `import: ${destName}`)
     await this.safeRefresh()
     return { ok: true, name: destName, target: finalDir }
+  }
+
+  /**
+   * 从 git 仓库安装 skills：只克隆仓库里的 `skills/` 目录（浅克隆 + 部分克隆 + 稀疏检出），
+   * 再逐个导入中央仓库。同名冲突自动以 -2 后缀并存，不覆盖已有内容。
+   */
+  async installFromGit(url: string): Promise<InstallFromGitResult | FailResult> {
+    const invalid = validateRepoUrl(url)
+    if (invalid) return fail('IO', invalid)
+
+    const repo = url.trim()
+    const workDir = join(managedRoot(), 'tmp', `install-${Date.now()}`)
+    let discovered: RepoSkill[]
+    try {
+      discovered = await cloneSkillsDir(repo, workDir)
+    } catch (err) {
+      await removeQuietly(workDir)
+      return fail('IO', (err as Error).message)
+    }
+
+    if (discovered.length === 0) {
+      await removeQuietly(workDir)
+      return fail('NOT_FOUND', '仓库的 skills/ 目录里没有找到含 SKILL.md 的 skill')
+    }
+
+    const installed: { source: string; name: string }[] = []
+    const failed: { name: string; message: string }[] = []
+    for (const skill of discovered) {
+      const result = await this.importSkill(skill.dir, { name: skill.name, commit: false })
+      if (result.ok) installed.push({ source: skill.name, name: result.name })
+      else failed.push({ name: skill.name, message: result.message })
+    }
+
+    await removeQuietly(workDir)
+    if (installed.length > 0) {
+      await autoCommit(centralRoot(), `install: ${repo}（${installed.length} 个）`)
+    }
+    await this.safeRefresh()
+    return { ok: true, repo, installed, failed }
   }
 
   /**
@@ -205,51 +285,122 @@ export class SkillStore {
   async adoptUnmanaged(itemId: string, action: AdoptAction): Promise<ActionResult> {
     const item = (await scanUnmanaged()).find((u) => u.id === itemId)
     if (!item) return fail('NOT_FOUND', '未找到该未纳管条目')
+    return this.adoptOne(item, action)
+  }
+
+  /**
+   * 一键导入：把所有「没有同名冲突」的未纳管条目直接纳入中央仓库。
+   * 同名冲突必须由用户逐项决定，这里原样跳过并如实回报。
+   */
+  async adoptAllUnmanaged(): Promise<AdoptAllResult | FailResult> {
+    return this.adoptBatch(await scanUnmanaged())
+  }
+
+  /** 批量纳入指定条目（选中若干项时使用），同名冲突同样跳过 */
+  async adoptManyUnmanaged(itemIds: string[]): Promise<AdoptAllResult | FailResult> {
+    const wanted = new Set(itemIds)
+    const items = (await scanUnmanaged()).filter((i) => wanted.has(i.id))
+    if (items.length === 0) return fail('NOT_FOUND', '未找到要纳入的条目')
+    return this.adoptBatch(items)
+  }
+
+  private async adoptBatch(items: UnmanagedSkill[]): Promise<AdoptAllResult> {
+    const targets = items.filter((i) => !i.conflict)
+    let adopted = 0
+    let failed = 0
+
+    for (const item of targets) {
+      const result = await this.adoptOne(item, 'adopt', false)
+      if (result.ok) adopted++
+      else failed++
+    }
+
+    if (adopted > 0) await autoCommit(centralRoot(), `adopt: 批量纳入 ${adopted} 个`)
+    await this.safeRefresh()
+    return { ok: true, adopted, conflicts: items.length - targets.length, failed }
+  }
+
+  /**
+   * 单个条目的纳入流程。
+   * 先复制再删除，任一步失败都回滚——绝不出现「原位置与中央仓库都没有」的空档。
+   */
+  private async adoptOne(
+    item: UnmanagedSkill,
+    action: AdoptAction,
+    commit = true,
+  ): Promise<ActionResult> {
+    if (!(await exists(item.path))) return fail('NOT_FOUND', '本地条目已不存在')
 
     const root = centralRoot()
     const existing = centralDirFor(item.relDir)
 
     if (action === 'keep') {
-      // 保留中央版本：本地副本丢弃，原地改为指向中央仓库的链接
+      // 保留中央版本：本地副本按选择丢弃，原地改为指向中央仓库的链接
       if (!(await exists(existing))) return fail('NOT_FOUND', '中央仓库中不存在同名 skill')
       try {
-        await replaceWithLink(item.path, existing)
+        await removeEntry(item.path)
+        await symlinkDir(existing, item.path)
       } catch (err) {
         await this.safeRefresh()
-        return fail('IO', `替换失败：${(err as Error).message}`)
+        return fail(
+          'IO',
+          `替换失败：${(err as Error).message}；本地副本已按选择丢弃，可在列表中把中央版本链接回来`,
+        )
       }
       await this.safeRefresh()
       return { ok: true }
     }
 
-    if (!(await exists(item.path))) return fail('NOT_FOUND', '本地条目已不存在')
-
-    let targetName = item.relDir
-    if (action === 'adopt' || action === 'overwrite') {
-      if (await exists(existing)) {
-        if (action === 'adopt') {
-          return fail('CONFLICT', '中央仓库已存在同名 skill', existing)
-        }
-        await fs.rm(existing, { recursive: true, force: true })
-      }
-    } else {
-      targetName = await resolveFreeName(root, item.relDir)
+    if (action === 'adopt' && (await exists(existing))) {
+      return fail('CONFLICT', '中央仓库已存在同名 skill', existing)
     }
 
+    const targetName = action === 'rename' ? await resolveFreeName(root, item.relDir) : item.relDir
     const targetDir = centralDirFor(targetName)
+    // 隐藏名：扫描器与监听器都会忽略，仅在回滚窗口内存在
+    const backupDir = join(root, `.backup-${targetName}-${Date.now()}`)
+    let centralBackedUp = false
+    let sourceTouched = false
+
     try {
       await fs.mkdir(root, { recursive: true })
-      // 解引用复制：本地若是软链，得到的是独立真身
-      await fs.cp(item.path, targetDir, { recursive: true, dereference: true, force: true })
+      // overwrite：先备份中央版本，失败时才能原样还回去
+      if (action === 'overwrite' && (await exists(existing))) {
+        await copyDir(existing, backupDir)
+        centralBackedUp = true
+        await removeEntry(existing)
+      }
+      await copyDir(item.path, targetDir)
+      sourceTouched = true
       await removeEntry(item.path)
       await symlinkDir(targetDir, item.path)
     } catch (err) {
-      await fs.rm(targetDir, { recursive: true, force: true }).catch(() => undefined)
+      const message = (err as Error).message
+      // 回滚：先把内容还回原位置，再清理中央仓库里的半成品
+      if (sourceTouched && !(await copyQuietly(targetDir, item.path))) {
+        await this.safeRefresh()
+        return fail(
+          'IO',
+          `纳入失败：${message}；原位置恢复失败，内容已保留在中央仓库 ${targetDir}` +
+            (centralBackedUp ? `，原中央版本备份在 ${backupDir}` : ''),
+        )
+      }
+      if (centralBackedUp) {
+        await removeQuietly(targetDir)
+        if (!(await copyQuietly(backupDir, existing))) {
+          await this.safeRefresh()
+          return fail('IO', `纳入失败：${message}；中央版本回滚失败，备份保留在 ${backupDir}`)
+        }
+      } else {
+        await removeQuietly(targetDir)
+      }
+      await removeQuietly(backupDir)
       await this.safeRefresh()
-      return fail('IO', `纳入失败：${(err as Error).message}`)
+      return fail('IO', `纳入失败：${message}（已恢复原状，可稍后重试）`)
     }
 
-    await autoCommit(root, `adopt: ${targetName}`)
+    await removeQuietly(backupDir)
+    if (commit) await autoCommit(root, `adopt: ${targetName}`)
     await this.safeRefresh()
     return { ok: true }
   }
@@ -268,7 +419,7 @@ export class SkillStore {
 
     try {
       if (skill.kind === 'external' && (await isSymlink(skill.dirPath))) {
-        await fs.unlink(skill.dirPath)
+        await withRetry(() => fs.unlink(skill.dirPath))
         await this.safeRefresh()
         return { ok: true }
       }
@@ -279,12 +430,12 @@ export class SkillStore {
         for (const source of SKILL_SOURCES) {
           const link = skill.links[source]
           if (link.state !== 'linked') continue
-          await fs.unlink(link.path).catch(() => undefined)
+          await withRetry(() => fs.unlink(link.path)).catch(() => undefined)
         }
-        await fs.rm(centralDir, { recursive: true, force: true })
+        await removeEntry(centralDir)
         await autoCommit(centralRoot(), `delete: ${skill.name}`)
       } else {
-        await fs.rm(skill.dirPath, { recursive: true, force: true })
+        await removeEntry(skill.dirPath)
       }
     } catch (err) {
       await this.safeRefresh()

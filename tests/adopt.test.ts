@@ -9,10 +9,11 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises'
+import { promises as fsPromises } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { applyPathOverrides } from '../src/main/paths'
 import { scanUnmanaged } from '../src/main/scanner'
@@ -242,5 +243,204 @@ describe('SkillStore.adoptUnmanaged', () => {
     expect((await readdir(join(root, 'central'))).filter((n) => !n.startsWith('.')).sort()).toEqual(
       ['a', 'b', 'c'],
     )
+  })
+})
+
+describe('SkillStore.adoptAllUnmanaged（一键导入）', () => {
+  it('无冲突的全部纳入并建链，同名冲突原样跳过', async () => {
+    await makeSkill(join(root, 'claude', 'a'), 'a')
+    await makeSkill(join(root, 'codex', 'b'), 'b')
+    await makeSkill(join(root, 'central', 'vue'), 'vue')
+    await makeSkill(join(root, 'opencode', 'vue'), 'vue-local')
+    await store.refresh()
+
+    expect(await store.adoptAllUnmanaged()).toEqual({
+      ok: true,
+      adopted: 2,
+      conflicts: 1,
+      failed: 0,
+    })
+
+    expect((await lstat(join(root, 'claude', 'a'))).isSymbolicLink()).toBe(true)
+    expect((await lstat(join(root, 'codex', 'b'))).isSymbolicLink()).toBe(true)
+    expect(await exists(join(root, 'central', 'a', 'SKILL.md'))).toBe(true)
+    expect(await exists(join(root, 'central', 'b', 'SKILL.md'))).toBe(true)
+
+    // 冲突项保持原样，中央版本未被覆盖
+    expect((await lstat(join(root, 'opencode', 'vue'))).isSymbolicLink()).toBe(false)
+    expect(await readFile(join(root, 'central', 'vue', 'SKILL.md'), 'utf8')).toContain('name: vue')
+    expect(await readFile(join(root, 'opencode', 'vue', 'SKILL.md'), 'utf8')).toContain(
+      'name: vue-local',
+    )
+
+    expect((await scanUnmanaged()).map((i) => i.id)).toEqual(['opencode:vue'])
+  })
+
+  it('没有未纳管条目时是空操作', async () => {
+    await store.refresh()
+    expect(await store.adoptAllUnmanaged()).toEqual({
+      ok: true,
+      adopted: 0,
+      conflicts: 0,
+      failed: 0,
+    })
+  })
+
+  it('adoptManyUnmanaged：只处理选中的条目', async () => {
+    await makeSkill(join(root, 'claude', 'a'), 'a')
+    await makeSkill(join(root, 'codex', 'b'), 'b')
+    await makeSkill(join(root, 'opencode', 'c'), 'c')
+    await store.refresh()
+
+    expect(await store.adoptManyUnmanaged(['claude:a', 'opencode:c'])).toEqual({
+      ok: true,
+      adopted: 2,
+      conflicts: 0,
+      failed: 0,
+    })
+
+    expect((await lstat(join(root, 'claude', 'a'))).isSymbolicLink()).toBe(true)
+    expect((await lstat(join(root, 'opencode', 'c'))).isSymbolicLink()).toBe(true)
+    expect(await exists(join(root, 'central', 'b'))).toBe(false)
+    expect((await scanUnmanaged()).map((i) => i.id)).toEqual(['codex:b'])
+  })
+
+  it('adoptManyUnmanaged：选中的同名冲突被跳过', async () => {
+    await makeSkill(join(root, 'central', 'vue'), 'vue')
+    await makeSkill(join(root, 'claude', 'vue'), 'vue-local')
+    await makeSkill(join(root, 'claude', 'a'), 'a')
+    await store.refresh()
+
+    expect(await store.adoptManyUnmanaged(['claude:vue', 'claude:a'])).toEqual({
+      ok: true,
+      adopted: 1,
+      conflicts: 1,
+      failed: 0,
+    })
+    expect(await readFile(join(root, 'central', 'vue', 'SKILL.md'), 'utf8')).toContain('name: vue')
+    expect((await scanUnmanaged()).map((i) => i.id)).toEqual(['claude:vue'])
+  })
+
+  it('adoptManyUnmanaged：未知 id 返回 NOT_FOUND', async () => {
+    await store.refresh()
+    const r = await store.adoptManyUnmanaged(['claude:nope'])
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.code).toBe('NOT_FOUND')
+  })
+})
+
+describe('SkillStore.adoptUnmanaged 失败回滚', () => {
+  const linkError = (code: string): Error =>
+    Object.assign(new Error(`${code}: operation failed`), { code })
+
+  /** 让建链稳定失败（EINVAL 不在重试名单里，测试无需等待退避） */
+  function breakSymlink(code = 'EINVAL'): ReturnType<typeof vi.spyOn> {
+    return vi.spyOn(fsPromises, 'symlink').mockRejectedValue(linkError(code))
+  }
+
+  it('adopt：建链失败时回滚，原位置与中央仓库都不留残骸', async () => {
+    await makeSkill(join(root, 'claude', 'local-a'), 'local-a')
+    await store.refresh()
+
+    const spy = breakSymlink()
+    let result
+    try {
+      result = await store.adoptUnmanaged('claude:local-a', 'adopt')
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toContain('已恢复原状')
+    // 原位置内容完好，且不是软链
+    expect(await readFile(join(root, 'claude', 'local-a', 'SKILL.md'), 'utf8')).toContain(
+      'name: local-a',
+    )
+    expect(await readFile(join(root, 'claude', 'local-a', 'references', 'a.md'), 'utf8')).toBe(
+      '# ref\n',
+    )
+    expect((await lstat(join(root, 'claude', 'local-a'))).isSymbolicLink()).toBe(false)
+    // 中央仓库没有半成品
+    expect(await exists(join(root, 'central', 'local-a'))).toBe(false)
+    // 回滚窗口的隐藏备份也被清掉
+    expect((await readdir(join(root, 'central'))).filter((n) => n.startsWith('.'))).toEqual([])
+    expect(await scanUnmanaged()).toHaveLength(1)
+  })
+
+  it('overwrite：建链失败时中央旧版本一并回滚', async () => {
+    await makeSkill(join(root, 'central', 'vue'), 'vue')
+    await makeSkill(join(root, 'claude', 'vue'), 'vue-local')
+    await store.refresh()
+
+    const spy = breakSymlink()
+    let result
+    try {
+      result = await store.adoptUnmanaged('claude:vue', 'overwrite')
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(result.ok).toBe(false)
+    expect(await readFile(join(root, 'central', 'vue', 'SKILL.md'), 'utf8')).toContain('name: vue')
+    expect(await readFile(join(root, 'claude', 'vue', 'SKILL.md'), 'utf8')).toContain(
+      'name: vue-local',
+    )
+    expect((await readdir(join(root, 'central'))).filter((n) => n.startsWith('.'))).toEqual([])
+  })
+
+  it('rename：建链失败时不留下 <name>-2 半成品', async () => {
+    await makeSkill(join(root, 'central', 'vue'), 'vue')
+    await makeSkill(join(root, 'claude', 'vue'), 'vue-local')
+    await store.refresh()
+
+    const spy = breakSymlink()
+    let result
+    try {
+      result = await store.adoptUnmanaged('claude:vue', 'rename')
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(result.ok).toBe(false)
+    expect(await exists(join(root, 'central', 'vue-2'))).toBe(false)
+    expect(await readFile(join(root, 'claude', 'vue', 'SKILL.md'), 'utf8')).toContain(
+      'name: vue-local',
+    )
+  })
+
+  it('keep：建链失败时中央版本完好，本地按选择丢弃', async () => {
+    await makeSkill(join(root, 'central', 'vue'), 'vue')
+    await makeSkill(join(root, 'claude', 'vue'), 'vue-local')
+    await store.refresh()
+
+    const spy = breakSymlink()
+    let result
+    try {
+      result = await store.adoptUnmanaged('claude:vue', 'keep')
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toContain('已按选择丢弃')
+    expect(await readFile(join(root, 'central', 'vue', 'SKILL.md'), 'utf8')).toContain('name: vue')
+    expect(await exists(join(root, 'claude', 'vue'))).toBe(false)
+  })
+
+  it('adopt：瞬时 EBUSY 退避重试后成功', async () => {
+    await makeSkill(join(root, 'claude', 'local-a'), 'local-a')
+    await store.refresh()
+
+    const spy = vi.spyOn(fsPromises, 'symlink').mockRejectedValueOnce(linkError('EBUSY'))
+    let result
+    try {
+      result = await store.adoptUnmanaged('claude:local-a', 'adopt')
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(result).toEqual({ ok: true })
+    expect((await lstat(join(root, 'claude', 'local-a'))).isSymbolicLink()).toBe(true)
+    expect(await exists(join(root, 'central', 'local-a', 'SKILL.md'))).toBe(true)
   })
 })

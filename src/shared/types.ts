@@ -79,7 +79,7 @@ export interface AppInfo {
 }
 
 /** 常驻侧边栏、不参与菜单配置的项 */
-export const FIXED_MENU_ITEM_IDS = ['dashboard', 'repository'] as const
+export const FIXED_MENU_ITEM_IDS = ['dashboard', 'repository', 'unmanaged'] as const
 
 /** 可配置（排序 / 显隐）的菜单项 id，不含固定的「设置」 */
 export const MENU_ITEM_IDS = [
@@ -162,6 +162,26 @@ export interface UnmanagedSkill {
  */
 export type AdoptAction = 'adopt' | 'overwrite' | 'rename' | 'keep'
 
+/** 一键导入的汇总结果 */
+export interface AdoptAllResult {
+  ok: true
+  /** 已纳入中央仓库的条目数 */
+  adopted: number
+  /** 同名冲突，必须由用户逐项决定 */
+  conflicts: number
+  /** 纳入失败的条目数 */
+  failed: number
+}
+
+/** 从 git 仓库安装 skills 的结果 */
+export interface InstallFromGitResult {
+  ok: true
+  repo: string
+  /** source 为仓库里的目录名；同名冲突时会以 name 落地（如 xxx-2） */
+  installed: { source: string; name: string }[]
+  failed: { name: string; message: string }[]
+}
+
 /* ---------------------------------- IPC ---------------------------------- */
 
 export interface SkillApi {
@@ -172,8 +192,11 @@ export interface SkillApi {
   link(skillId: string, source: SkillSource): Promise<ActionResult>
   unlink(skillId: string, source: SkillSource): Promise<ActionResult>
   importSkill(path?: string): Promise<ImportResult>
+  installFromGit(url: string): Promise<InstallFromGitResult | FailResult>
   unmanaged(): Promise<UnmanagedSkill[]>
   adoptUnmanaged(itemId: string, action: AdoptAction): Promise<ActionResult>
+  adoptAllUnmanaged(): Promise<AdoptAllResult | FailResult>
+  adoptManyUnmanaged(itemIds: string[]): Promise<AdoptAllResult | FailResult>
   deleteSkill(skillId: string): Promise<ActionResult>
   revealInFinder(skillId: string): Promise<void>
   openPath(target: 'central' | SkillSource): Promise<ActionResult>

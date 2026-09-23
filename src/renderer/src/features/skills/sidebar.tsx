@@ -1,11 +1,11 @@
 import { type MenuItemId, type MenuPrefs, type SkillSource } from '@shared/types'
-import { LayoutDashboard, Moon, Package, Settings, Sun } from 'lucide-react'
+import { Inbox, LayoutDashboard, Moon, Package, Settings, Sun } from 'lucide-react'
 import { type ReactElement, type ReactNode } from 'react'
 
 import { AgentIcon } from '@/components/agent-icons'
 import { Button } from '@/components/ui/button'
 import type { AgentId, View } from '@/hooks/use-skills'
-import { MENU_GROUP_LABEL, MENU_GROUP_ORDER, resolveMenu } from '@/lib/menu'
+import { MENU_GROUP_LABEL, MENU_GROUP_ORDER, resolveMenu, type MenuItemDef } from '@/lib/menu'
 import { cn } from '@/lib/utils'
 
 export interface TitleBarProps {
@@ -82,6 +82,7 @@ export interface SidebarProps {
   counts: {
     all: number
     central: number
+    external: number
     bySource: Record<SkillSource, number>
     byAgent: Record<AgentId, number>
     linked: number
@@ -102,8 +103,16 @@ function isViewActive(current: View, target: View): boolean {
 function countFor(id: MenuItemId, counts: SidebarProps['counts']): number {
   if (id === 'dashboard') return counts.all
   if (id === 'repository') return counts.central
+  if (id === 'unmanaged') return counts.external
   const [kind, source] = id.split(':') as ['location' | 'workspace', SkillSource]
   return kind === 'location' ? counts.bySource[source] : counts.byAgent[source]
+}
+
+function iconFor(item: MenuItemDef): ReactNode {
+  if (item.source) return <AgentIcon agent={item.source} className="h-3.5 w-3.5" />
+  if (item.id === 'repository') return <Package className="h-3.5 w-3.5" />
+  if (item.id === 'unmanaged') return <Inbox className="h-3.5 w-3.5" />
+  return <LayoutDashboard className="h-3.5 w-3.5" />
 }
 
 export function Sidebar({ view, onViewChange, menu, counts }: SidebarProps): ReactElement {
@@ -133,15 +142,7 @@ export function Sidebar({ view, onViewChange, menu, counts }: SidebarProps): Rea
                 active={isViewActive(view, item.view)}
                 label={item.label}
                 count={countFor(item.id, counts)}
-                icon={
-                  item.source ? (
-                    <AgentIcon agent={item.source} className="h-3.5 w-3.5" />
-                  ) : item.id === 'repository' ? (
-                    <Package className="h-3.5 w-3.5" />
-                  ) : (
-                    <LayoutDashboard className="h-3.5 w-3.5" />
-                  )
-                }
+                icon={iconFor(item)}
                 onClick={() => onViewChange(item.view)}
               />
             ))}
