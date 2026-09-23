@@ -11,7 +11,11 @@ import {
 
 const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
 
-function skill(kind: SkillKind, origin: SkillSource | null, links: Partial<Record<SkillSource, string>> = {}): Skill {
+function skill(
+  kind: SkillKind,
+  origin: SkillSource | null,
+  links: Partial<Record<SkillSource, string>> = {},
+): Skill {
   return {
     id: `${kind}:${origin ?? 'central'}:demo`,
     kind,

@@ -37,7 +37,7 @@ export const MENU_ITEMS: MenuItemDef[] = [
   {
     id: 'dashboard',
     group: 'overview',
-    label: 'Dashboard',
+    label: '总览',
     view: { kind: 'dashboard' },
     fixed: true,
   },

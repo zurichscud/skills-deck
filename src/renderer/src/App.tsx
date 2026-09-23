@@ -54,6 +54,18 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
 
 const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
 
+/** 主题切换时抑制全局过渡，避免颜色一齐渐变造成「涂抹」 */
+function suppressThemeTransitions(): void {
+  const style = document.createElement('style')
+  style.append(document.createTextNode('*,*::before,*::after{transition:none !important}'))
+  document.head.append(style)
+  // 强制同步 reflow，让新主题在 override 生效期间提交
+  void document.body.offsetHeight
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => style.remove())
+  })
+}
+
 function readStoredTheme(): Theme {
   try {
     const v = localStorage.getItem('skillsdeck.theme')
@@ -85,6 +97,7 @@ export default function App(): ReactElement {
 
   const searchRef = useRef<HTMLInputElement>(null)
   const detailRef = useRef<HTMLElement>(null)
+  const themeRef = useRef<Theme>(readStoredTheme())
 
   const reloadInfo = useCallback(async (): Promise<void> => {
     setInfo(await window.api.info())
@@ -120,7 +133,9 @@ export default function App(): ReactElement {
   }, [])
 
   useEffect(() => {
+    suppressThemeTransitions()
     document.documentElement.classList.toggle('dark', theme === 'dark')
+    themeRef.current = theme
     try {
       localStorage.setItem('skillsdeck.theme', theme)
     } catch {
@@ -136,7 +151,8 @@ export default function App(): ReactElement {
         searchRef.current?.focus()
         searchRef.current?.select()
       }
-      if (e.key === 'Escape') setSelectedId(null)
+      // 弹窗自己处理 Escape（Radix 会 preventDefault），不在此清掉选中项
+      if (e.key === 'Escape' && !e.defaultPrevented) setSelectedId(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -439,7 +455,10 @@ export default function App(): ReactElement {
       <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
         <TitleBar
           theme={theme}
-          onThemeToggle={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+          onThemeToggle={() => {
+            suppressThemeTransitions()
+            setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
+          }}
         />
 
         <div className="flex min-h-0 flex-1">
@@ -501,20 +520,21 @@ export default function App(): ReactElement {
                 />
 
                 {/* 固定高度工具条：始终占位，避免操作按钮出现/消失引起表格抖动 */}
-                <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3">
+                <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
                   {checkedIds.size > 0 ? (
                     <>
-                      <span className="text-[12px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         已选 <span className="font-mono tabular-nums">{checkedIds.size}</span> 项
                       </span>
                       <Separator orientation="vertical" className="h-4" />
-                      <div className="ml-auto flex items-center gap-2">
+                      <div className="ms-auto flex items-center gap-2">
                         {/* 未纳管条目无法直接链接，该视图只提供「纳入管理 / 删除」 */}
                         {listView.kind === 'unmanaged' ? (
                           <>
                             <Button
                               size="sm"
-                              className="h-7 gap-1.5 text-[12px]"
+                              static
+                              className="h-7 gap-1.5 text-xs"
                               disabled={adoptingAll}
                               onClick={() => void doAdoptSelected(checkedInView)}
                             >
@@ -524,7 +544,8 @@ export default function App(): ReactElement {
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-7 gap-1.5 border-destructive/40 text-[12px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              static
+                              className="h-7 gap-1.5 border-destructive/40 text-xs text-destructive-text hover:bg-destructive/10 hover:text-destructive-text"
                               onClick={() => setDeleteTargets(checkedInView)}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -539,13 +560,14 @@ export default function App(): ReactElement {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 gap-1.5 border-ok/40 text-[12px] text-ok hover:bg-ok/10 hover:text-ok dark:border-ok/40 dark:hover:bg-ok/10"
+                                  static
+                                  className="h-7 gap-1.5 border-ok/40 text-xs text-ok hover:bg-ok/10 hover:text-ok"
                                 >
                                   <Link2 className="h-3.5 w-3.5" />
                                   链接到…
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="text-[13px]">
+                              <DropdownMenuContent align="end" className="text-sm">
                                 {SOURCES.map((source) => (
                                   <DropdownMenuItem
                                     key={source}
@@ -562,13 +584,14 @@ export default function App(): ReactElement {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 gap-1.5 text-[12px] text-muted-foreground"
+                                  static
+                                  className="h-7 gap-1.5 text-xs text-muted-foreground"
                                 >
                                   <Link2Off className="h-3.5 w-3.5" />
                                   取消链接
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="text-[13px]">
+                              <DropdownMenuContent align="end" className="text-sm">
                                 {SOURCES.map((source) => (
                                   <DropdownMenuItem
                                     key={source}
@@ -587,7 +610,8 @@ export default function App(): ReactElement {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-7 gap-1.5 text-[12px] text-muted-foreground"
+                          static
+                          className="h-7 gap-1.5 text-xs text-muted-foreground"
                           onClick={() => setCheckedIds(new Set())}
                         >
                           <X className="h-3.5 w-3.5" />
@@ -603,17 +627,18 @@ export default function App(): ReactElement {
                             key={t.key}
                             size="sm"
                             variant={status === t.key ? 'secondary' : 'ghost'}
-                            className="h-6 gap-1.5 px-2 text-[12px] transition-none active:scale-100"
+                            static
+                            className="h-6 gap-1.5 px-2 text-xs"
                             onClick={() => setStatus(t.key)}
                           >
                             {t.label}
-                            <span className="font-mono text-[11px] text-muted-foreground/70 tabular-nums">
+                            <span className="font-mono text-2xs text-muted-foreground tabular-nums">
                               {statusCounts[t.key]}
                             </span>
                           </Button>
                         ))}
                       </div>
-                      <span className="ml-auto font-mono text-[11.5px] text-muted-foreground/70 tabular-nums">
+                      <span className="ms-auto font-mono text-2xs text-muted-foreground tabular-nums">
                         {loading ? '加载中…' : `${visible.length} 条结果`}
                       </span>
                     </>
@@ -646,7 +671,7 @@ export default function App(): ReactElement {
           {listView && (
             <section
               ref={detailRef}
-              className="flex w-[336px] shrink-0 flex-col border-l border-sidebar-border bg-sidebar"
+              className="flex w-[336px] shrink-0 flex-col border-s border-sidebar-border bg-sidebar"
             >
               <SkillDetail key={selected?.id ?? 'empty'} skill={selected} />
             </section>

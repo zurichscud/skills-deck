@@ -30,6 +30,9 @@ const TOAST_LABEL: Record<AdoptAction, string> = {
   keep: '已改为指向中央仓库的链接',
 }
 
+const FOCUS_RING =
+  'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
+
 type Direction = 'next' | 'prev'
 
 export interface MigrationDialogProps {
@@ -63,33 +66,29 @@ function SlideCard({
         <AgentIcon agent={item.source} className="mt-0.5 h-5 w-5 shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-[14px] font-medium">{item.name}</span>
+            <span className="font-mono text-base font-medium">{item.name}</span>
             {item.isSymlink && (
-              <Badge variant="outline" className="text-[10.5px] text-muted-foreground">
+              <Badge variant="outline" className="text-2xs text-muted-foreground">
                 软链
               </Badge>
             )}
             {item.conflict && (
-              <Badge variant="outline" className="border-warn/40 text-[10.5px] text-warn">
+              <Badge variant="outline" className="border-warn/40 text-2xs text-warn">
                 同名冲突
               </Badge>
             )}
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           </div>
           {item.description && (
-            <p className="mt-2 text-[12.5px] leading-relaxed text-muted-foreground">
-              {item.description}
-            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{item.description}</p>
           )}
-          <p className="mt-2 font-mono text-[10.5px] break-all text-muted-foreground/60">
-            {item.path}
-          </p>
+          <p className="mt-2 font-mono text-2xs break-all text-muted-foreground">{item.path}</p>
         </div>
       </div>
 
       {item.conflict && (
         <div className="mt-4">
-          <p className="flex items-center gap-1.5 text-[11.5px] text-warn">
+          <p className="flex items-center gap-1.5 text-2xs text-warn">
             <AlertTriangle className="h-3 w-3 shrink-0" />
             中央仓库已存在同名 skill
             {item.identical ? '（内容一致）' : '（内容不同）'}
@@ -102,18 +101,19 @@ function SlideCard({
                 disabled={busy}
                 onClick={() => onApply(item, choice.action)}
                 className={cn(
-                  'flex items-baseline gap-2 rounded-[5px] border px-2.5 py-1.5 text-left transition-colors',
+                  FOCUS_RING,
+                  'flex items-baseline gap-2 rounded-md border px-2.5 py-1.5 text-left transition-colors',
                   'disabled:cursor-default disabled:opacity-60',
                   choice.action === 'keep'
                     ? 'border-destructive/35 hover:bg-destructive/5'
                     : 'hover:bg-accent/60',
                 )}
               >
-                <span className="shrink-0 text-[12px] font-medium">{choice.label}</span>
+                <span className="shrink-0 text-xs font-medium">{choice.label}</span>
                 <span
                   className={cn(
-                    'min-w-0 truncate text-[11px]',
-                    choice.action === 'keep' ? 'text-destructive/80' : 'text-muted-foreground',
+                    'min-w-0 truncate text-2xs',
+                    choice.action === 'keep' ? 'text-destructive-text' : 'text-muted-foreground',
                   )}
                 >
                   {choice.detail}
@@ -128,10 +128,7 @@ function SlideCard({
 }
 
 /** 每次打开弹窗时重新挂载，状态天然从第一项开始 */
-function Carousel({
-  onClose,
-  onChanged,
-}: Omit<MigrationDialogProps, 'open'>): ReactElement {
+function Carousel({ onClose, onChanged }: Omit<MigrationDialogProps, 'open'>): ReactElement {
   const [items, setItems] = useState<UnmanagedSkill[] | null>(null)
   const [total, setTotal] = useState(0)
   const [index, setIndex] = useState(0)
@@ -209,11 +206,11 @@ function Carousel({
   return (
     <>
       <DialogHeader className="shrink-0 gap-2 border-b px-4 py-3.5">
-        <DialogTitle className="flex items-center gap-2 text-[15px]">
-          <Sparkles className="h-4 w-4 text-primary" />
-          未纳管的 Skill
+        <DialogTitle className="flex items-center gap-2 text-base">
+          <Sparkles className="h-4 w-4" />
+          未纳管的 skill
         </DialogTitle>
-        <DialogDescription className="text-[12px]">
+        <DialogDescription className="text-xs">
           {items === null
             ? '正在扫描三个存储位置…'
             : count === 0
@@ -247,16 +244,14 @@ function Carousel({
       {allIgnored && (
         <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
           <EyeOff className="h-5 w-5 text-muted-foreground" />
-          <p className="text-[13px] text-muted-foreground">
-            已忽略全部 {count} 项，它们仍留在原位置
-          </p>
+          <p className="text-sm text-muted-foreground">已忽略全部 {count} 项，它们仍留在原位置</p>
         </div>
       )}
 
       {items !== null && count === 0 && (
         <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
           <Check className="h-5 w-5 text-ok" />
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {total > 0 ? `全部 ${total} 项已处理完毕` : '没有需要处理的条目'}
           </p>
         </div>
@@ -266,7 +261,8 @@ function Carousel({
         {current && !current.conflict && (
           <Button
             size="sm"
-            className="h-8 gap-1.5 text-[12.5px]"
+            static
+            className="h-8 gap-1.5 text-xs"
             disabled={busy}
             onClick={() => void apply(current, 'adopt')}
           >
@@ -278,7 +274,8 @@ function Carousel({
           <Button
             variant="outline"
             size="sm"
-            className="h-8 text-[12.5px]"
+            static
+            className="h-8 text-xs"
             disabled={busy}
             onClick={ignore}
           >
@@ -286,13 +283,13 @@ function Carousel({
           </Button>
         )}
         {!current && allIgnored && (
-          <Button size="sm" className="h-8 gap-1.5 text-[12.5px]" onClick={restart}>
+          <Button size="sm" static className="h-8 gap-1.5 text-xs" onClick={restart}>
             <RotateCcw className="h-3.5 w-3.5" />
             重新过一遍
           </Button>
         )}
         {!current && (
-          <Button variant="outline" size="sm" className="h-8 text-[12.5px]" onClick={onClose}>
+          <Button variant="outline" size="sm" static className="h-8 text-xs" onClick={onClose}>
             关闭
           </Button>
         )}

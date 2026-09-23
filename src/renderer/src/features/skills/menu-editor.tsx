@@ -31,6 +31,9 @@ import {
 } from '@/lib/menu'
 import { cn } from '@/lib/utils'
 
+const FOCUS_RING =
+  'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
+
 function SortableRow({
   item,
   visible,
@@ -49,14 +52,17 @@ function SortableRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        'flex items-center gap-1.5 rounded-md border bg-background py-1 pr-2 pl-1',
+        'flex items-center gap-1.5 rounded-md border bg-background py-1 ps-1 pe-2',
         !visible && 'opacity-55',
         isDragging && 'relative z-10 shadow-sm',
       )}
     >
       <button
         type="button"
-        className="flex h-6 w-6 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground active:cursor-grabbing"
+        className={cn(
+          FOCUS_RING,
+          'flex h-6 w-6 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:cursor-grabbing',
+        )}
         aria-label={`拖拽排序 ${item.label}`}
         {...attributes}
         {...listeners}
@@ -70,7 +76,7 @@ function SortableRow({
           <LayoutDashboard className="h-3.5 w-3.5" />
         )}
       </span>
-      <span className="flex-1 truncate text-[13px]">{item.label}</span>
+      <span className="flex-1 truncate text-sm">{item.label}</span>
       <Switch checked={visible} onCheckedChange={onToggle} aria-label={`显示 ${item.label}`} />
     </div>
   )
@@ -145,9 +151,9 @@ export function MenuEditor({ menu, onChange }: MenuEditorProps): ReactElement {
         if (items.length === 0) return null
         return (
           <div key={group} className="grid gap-1">
-            <p className="text-[11px] font-medium text-muted-foreground">
+            <h3 className="text-2xs font-medium text-muted-foreground">
               {MENU_GROUP_LABEL[group]}
-            </p>
+            </h3>
             <SortableGroup
               group={group}
               items={items}

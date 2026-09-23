@@ -29,7 +29,11 @@ function HeaderIcon({ view }: { view: ListView }): ReactElement {
   if (view.kind === 'repository' || view.kind === 'unmanaged') {
     return (
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
-        {view.kind === 'repository' ? <Package className="h-4 w-4" /> : <Inbox className="h-4 w-4" />}
+        {view.kind === 'repository' ? (
+          <Package className="h-4 w-4" />
+        ) : (
+          <Inbox className="h-4 w-4" />
+        )}
       </span>
     )
   }
@@ -68,6 +72,8 @@ export function ViewHeader({
           ? (info?.sourceRoots[view.source] ?? '…')
           : `合并读取 ${AGENT_SOURCES[view.agent].length} 个位置，共 ${scoped.length} 条 skill`
 
+  const modKey = info?.platform === 'darwin' ? '⌘K' : 'Ctrl K'
+
   return (
     <div className="flex shrink-0 items-center gap-4 border-b px-4 py-3">
       <div className="min-w-0 flex-1">
@@ -75,7 +81,7 @@ export function ViewHeader({
           <HeaderIcon view={view} />
           <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
         </div>
-        <p className="mt-1 truncate font-mono text-[11.5px] text-muted-foreground" title={pathLine}>
+        <p className="mt-1 truncate font-mono text-2xs text-muted-foreground" title={pathLine}>
           {pathLine}
         </p>
       </div>
@@ -87,18 +93,19 @@ export function ViewHeader({
             ref={searchRef}
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="搜索 Agent Skills..."
-            className="h-9 pr-14 pl-8 text-[13px]"
+            placeholder="搜索 skill…"
+            className="h-9 ps-8 pe-14 text-sm"
             aria-label="搜索 skill"
           />
-          <kbd className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            ⌘K
+          <kbd className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded border bg-background px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
+            {modKey}
           </kbd>
         </div>
 
         <Button
           variant="outline"
           size="icon"
+          static
           className="h-9 w-9"
           onClick={onRefresh}
           disabled={refreshing}
@@ -112,7 +119,8 @@ export function ViewHeader({
           <Button
             variant="outline"
             size="sm"
-            className="h-9 gap-1.5 px-3 text-[13px]"
+            static
+            className="h-9 gap-1.5 px-3 text-sm"
             onClick={onOpenLocation}
             title={pathLine}
           >

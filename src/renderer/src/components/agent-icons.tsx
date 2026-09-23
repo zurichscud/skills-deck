@@ -33,11 +33,11 @@ export function AgentIcon({ agent, className }: AgentIconProps): React.ReactElem
       alt=""
       aria-hidden
       draggable={false}
-      className={cn('h-4 w-4 shrink-0 object-contain', DARK_INVERT[agent], className)}
+      className={cn(
+        'img-ring h-4 w-4 shrink-0 rounded-xs object-contain',
+        DARK_INVERT[agent],
+        className,
+      )}
     />
   )
-}
-
-export function agentIconSrc(agent: SkillSource): string {
-  return SRC[agent]
 }

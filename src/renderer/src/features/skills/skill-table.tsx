@@ -14,7 +14,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { linkStateOf, linkTargetsFor, localSourceInView, switchSourceFor, type ListView } from '@/hooks/use-skills'
+import {
+  linkStateOf,
+  linkTargetsFor,
+  localSourceInView,
+  switchSourceFor,
+  type ListView,
+} from '@/hooks/use-skills'
 import { cn } from '@/lib/utils'
 
 const LINK_HINT: Record<LinkState, string> = {
@@ -24,6 +30,9 @@ const LINK_HINT: Record<LinkState, string> = {
   conflict: '该位置已被同名条目占用，需手动处理',
   native: 'Codex 内置，天然可用',
 }
+
+const FOCUS_RING =
+  'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 /** 单一启用位置：开/关软链；本地条目与内置天然可用，未纳管的其他情况禁用 */
 function EnableSwitch({
@@ -41,7 +50,11 @@ function EnableSwitch({
   const local = skill.kind === 'external' && skill.origin === source
   const checked = local || state === 'linked' || state === 'native'
   const disabled =
-    pending || local || skill.kind === 'external' || skill.kind === 'builtin' || state === 'conflict'
+    pending ||
+    local ||
+    skill.kind === 'external' ||
+    skill.kind === 'builtin' ||
+    state === 'conflict'
 
   const hint = local
     ? '本地条目：内容就在这个位置，agent 天然可用（尚未纳入中央仓库）'
@@ -90,23 +103,6 @@ function LinkToggle({
   const linked = local || state === 'linked' || state === 'native'
   const disabled = pending || local || state === 'native' || state === 'conflict'
 
-  const tint = `var(--source-${source})`
-  const style =
-    state === 'conflict' && !local
-      ? undefined
-      : linked
-        ? {
-            color: tint,
-            borderColor: `color-mix(in oklab, ${tint} 45%, transparent)`,
-            background: `color-mix(in oklab, ${tint} 13%, transparent)`,
-          }
-        : state === 'broken'
-          ? {
-              color: 'var(--warn)',
-              borderColor: 'color-mix(in oklab, var(--warn) 45%, transparent)',
-            }
-          : undefined
-
   const hint = local
     ? '本地条目：内容就在这个位置，agent 天然可用（尚未纳入中央仓库）'
     : LINK_HINT[state]
@@ -121,10 +117,13 @@ function LinkToggle({
         e.stopPropagation()
         onToggle(skill, source, !linked)
       }}
-      style={style}
+      data-source={source}
+      data-linked={linked && state !== 'conflict' && !local ? 'true' : undefined}
+      data-state={state === 'broken' && !local ? 'broken' : undefined}
       className={cn(
-        'flex h-6 w-6 items-center justify-center rounded-[5px] border transition-colors',
-        !linked && state !== 'conflict' && state !== 'broken' && 'border-dashed border-border/70',
+        FOCUS_RING,
+        'link-toggle flex h-6 w-6 items-center justify-center rounded-md border transition-colors',
+        !linked && state !== 'conflict' && state !== 'broken' && 'border-dashed border-border',
         state === 'conflict' && !local && 'border-warn/50 text-warn',
         disabled ? 'cursor-default opacity-70' : 'hover:border-foreground/30',
         !disabled && linked && 'hover:opacity-80',
@@ -191,12 +190,12 @@ export function SkillTable({
         {filtered ? (
           <>
             <p className="text-sm font-medium">没有匹配的 skill</p>
-            <p className="text-[13px] text-muted-foreground">调整搜索词或上方状态筛选再试。</p>
+            <p className="text-sm text-muted-foreground">调整搜索词或上方状态筛选再试。</p>
           </>
         ) : (
           <>
             <p className="text-sm font-medium">这里还没有 skill</p>
-            <p className="text-[13px] text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               检查设置中的仓库地址，或点击右上角刷新重新扫描。
             </p>
           </>
@@ -207,10 +206,10 @@ export function SkillTable({
 
   return (
     <div className="h-full overflow-auto">
-      <table className="w-full min-w-[680px] table-fixed border-collapse text-[13px]">
+      <table className="w-full min-w-[680px] table-fixed border-collapse text-sm">
         <thead className="sticky top-0 z-10 bg-background">
-          <tr className="border-b text-left text-[11px] font-medium text-muted-foreground">
-            <th className="w-8 cursor-pointer px-2 py-2" onClick={onToggleAll}>
+          <tr className="border-b text-left text-2xs font-medium text-muted-foreground">
+            <th className="w-8 px-2 py-2">
               <Checkbox
                 checked={allChecked}
                 onCheckedChange={onToggleAll}
@@ -245,9 +244,8 @@ export function SkillTable({
                 onClick={() => onSelect(skill)}
                 className={cn(
                   'cursor-pointer border-b border-border/60 transition-colors hover:bg-accent/50',
-                  selected && 'bg-accent/60',
+                  selected && 'row-select-rail bg-accent/60',
                 )}
-                style={selected ? { boxShadow: 'inset 2px 0 0 var(--primary)' } : undefined}
               >
                 <td
                   className="cursor-pointer px-2 py-2"
@@ -268,26 +266,24 @@ export function SkillTable({
                     {pending && (
                       <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
                     )}
-                    <span className="truncate font-mono text-[12.5px]" title={skill.name}>
+                    <span className="truncate font-mono text-xs" title={skill.name}>
                       {skill.name}
                     </span>
                   </div>
                 </td>
                 <td className="px-2 py-2">
                   <span className="block truncate text-muted-foreground" title={skill.description}>
-                    {skill.description || '无'}
+                    {skill.description || '无描述'}
                   </span>
                 </td>
                 {!isUnmanaged && (
                   <td className="px-2 py-2">
                     <span
                       className={cn(
-                        'block truncate text-[11.5px]',
+                        'block truncate text-2xs',
                         skill.kind === 'external' && localSourceInView(skill, view) === null
                           ? 'text-warn'
-                          : skill.kind === 'builtin'
-                            ? 'text-muted-foreground/70'
-                            : 'text-muted-foreground',
+                          : 'text-muted-foreground',
                       )}
                       title={
                         skill.kind === 'external' && localSourceInView(skill, view) !== null
@@ -335,14 +331,15 @@ export function SkillTable({
                       <Button
                         variant="ghost"
                         size="icon"
+                        static
                         className="h-6 w-6"
-                        aria-label="更多操作"
+                        aria-label={`更多操作：${skill.name}`}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <MoreHorizontal className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="text-[13px]">
+                    <DropdownMenuContent align="end" className="text-sm">
                       {isUnmanaged ? (
                         <>
                           <DropdownMenuItem onSelect={() => onAdopt()}>

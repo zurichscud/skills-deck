@@ -1,3 +1,4 @@
+import { promises as fsPromises } from 'node:fs'
 import {
   lstat,
   mkdir,
@@ -9,7 +10,6 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises'
-import { promises as fsPromises } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 

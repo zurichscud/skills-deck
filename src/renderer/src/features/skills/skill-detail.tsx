@@ -28,32 +28,35 @@ import { Separator } from '@/components/ui/separator'
 import { isActive } from '@/hooks/use-skills'
 import { cn, formatBytes, formatRelativeTime } from '@/lib/utils'
 
+const FOCUS_RING =
+  'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
+
 function StatusBadge({ skill }: { skill: Skill }): ReactElement {
   if (skill.kind === 'builtin')
     return (
-      <Badge variant="outline" className="text-[11px]">
+      <Badge variant="outline" className="text-2xs">
         内置
       </Badge>
     )
   if (skill.kind === 'external') {
     return skill.links[skill.origin as SkillSource]?.state === 'broken' ? (
-      <Badge variant="destructive" className="text-[11px]">
+      <Badge variant="destructive" className="text-2xs">
         失效
       </Badge>
     ) : (
-      <Badge variant="outline" className="border-warn/50 text-[11px] text-warn">
+      <Badge variant="outline" className="border-warn/50 text-2xs text-warn">
         未纳管
       </Badge>
     )
   }
   if (isActive(skill))
     return (
-      <Badge variant="outline" className="border-ok/40 text-[11px] text-ok">
+      <Badge variant="outline" className="border-ok/40 text-2xs text-ok">
         已启用
       </Badge>
     )
   return (
-    <Badge variant="secondary" className="text-[11px]">
+    <Badge variant="secondary" className="text-2xs">
       未启用
     </Badge>
   )
@@ -69,10 +72,10 @@ const LINK_LABEL: Record<LinkState, string> = {
 
 const LINK_STYLE: Record<LinkState, string> = {
   linked: 'text-ok',
-  absent: 'text-muted-foreground/60',
+  absent: 'text-muted-foreground',
   broken: 'text-warn',
   conflict: 'text-warn',
-  native: 'text-muted-foreground/70',
+  native: 'text-muted-foreground',
 }
 
 function LinkRow({ skill, source }: { skill: Skill; source: SkillSource }): ReactElement | null {
@@ -84,18 +87,14 @@ function LinkRow({ skill, source }: { skill: Skill; source: SkillSource }): Reac
       <AgentIcon agent={source} className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">
-          <span className="text-[12px]">{SOURCE_LABEL[source]}</span>
-          <span className={cn('text-[11px]', LINK_STYLE[link.state])}>
-            {LINK_LABEL[link.state]}
-          </span>
+          <span className="text-xs">{SOURCE_LABEL[source]}</span>
+          <span className={cn('text-2xs', LINK_STYLE[link.state])}>{LINK_LABEL[link.state]}</span>
         </div>
         {link.path && (
-          <p className="mt-0.5 font-mono text-[10.5px] break-all text-muted-foreground/60">
-            {link.path}
-          </p>
+          <p className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">{link.path}</p>
         )}
         {link.target && link.state !== 'linked' && (
-          <p className="mt-0.5 font-mono text-[10.5px] break-all text-muted-foreground/60">
+          <p className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">
             → {link.target}
           </p>
         )}
@@ -178,17 +177,17 @@ function FileTree({ nodes, depth, collapsed, onToggle }: FileTreeProps): ReactEl
           return (
             <div
               key={node.path}
-              className="flex items-center justify-between gap-2 py-0.5 text-[11.5px]"
-              style={{ paddingLeft: depth * 14 + 4 }}
+              className="flex items-center justify-between gap-2 py-0.5 text-2xs"
+              style={{ paddingInlineStart: depth * 14 + 4 }}
             >
               <span
                 className="flex min-w-0 items-center gap-1.5 font-mono text-muted-foreground"
                 title={node.path}
               >
-                <Icon className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+                <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
                 <span className="truncate">{node.name}</span>
               </span>
-              <span className="shrink-0 text-muted-foreground/60 tabular-nums">
+              <span className="shrink-0 text-muted-foreground tabular-nums">
                 {formatBytes(node.file.size)}
               </span>
             </div>
@@ -201,16 +200,21 @@ function FileTree({ nodes, depth, collapsed, onToggle }: FileTreeProps): ReactEl
             <button
               type="button"
               onClick={() => onToggle(node.path)}
-              className="flex w-full items-center gap-1 py-0.5 text-left text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
-              style={{ paddingLeft: depth * 14 }}
+              aria-expanded={open}
+              aria-label={`${open ? '折叠' : '展开'}目录 ${node.name}`}
+              className={cn(
+                FOCUS_RING,
+                'flex w-full items-center gap-1 py-0.5 text-left text-2xs text-muted-foreground transition-colors hover:text-foreground',
+              )}
+              style={{ paddingInlineStart: depth * 14 }}
             >
               <ChevronRight
                 className={cn('h-3 w-3 shrink-0 transition-transform', open && 'rotate-90')}
               />
               {open ? (
-                <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+                <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
               ) : (
-                <Folder className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+                <Folder className="h-3 w-3 shrink-0 text-muted-foreground" />
               )}
               <span className="truncate font-mono">{node.name}</span>
             </button>
@@ -261,7 +265,7 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <p className="text-sm font-medium text-muted-foreground">未选择 skill</p>
-        <p className="text-[13px] text-muted-foreground/70">
+        <p className="text-sm text-muted-foreground">
           在列表中选择一项，这里会显示链接状态、路径、frontmatter 和文件。
         </p>
       </div>
@@ -279,34 +283,34 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
       <div className="flex flex-col gap-4 p-4">
         <div>
           <div className="flex items-start justify-between gap-2">
-            <h2 className="font-mono text-[15px] leading-snug font-semibold break-all">
+            <h2 className="font-mono text-base leading-snug font-semibold break-all">
               {skill.name}
             </h2>
             <StatusBadge skill={skill} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {skill.kind === 'central' && (
-              <Badge variant="outline" className="gap-1 text-[11px]">
+              <Badge variant="outline" className="gap-1 text-2xs">
                 <Link2 className="h-3 w-3" />
                 中央仓库
               </Badge>
             )}
             {skill.kind === 'builtin' && <Badge variant="secondary">Codex 内置</Badge>}
             {skill.kind === 'external' && (
-              <Badge variant="outline" className="gap-1 border-warn/50 text-[11px] text-warn">
+              <Badge variant="outline" className="gap-1 border-warn/50 text-2xs text-warn">
                 <Link2Off className="h-3 w-3" />
                 未纳管
               </Badge>
             )}
           </div>
-          <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">
-            {skill.description || '（无描述）'}
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            {skill.description || '无描述'}
           </p>
         </div>
 
         {brokenExternal && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
-            <p className="flex items-center gap-1.5 text-[12px] font-medium text-destructive">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-destructive-text">
               <AlertTriangle className="h-3.5 w-3.5" />
               符号链接失效
             </p>
@@ -317,7 +321,7 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
           <>
             <Separator />
             <div>
-              <p className="mb-1 text-[11px] font-medium text-muted-foreground">启用状态</p>
+              <h3 className="mb-1 text-2xs font-medium text-muted-foreground">启用状态</h3>
               <div className="divide-y divide-border/50">
                 {SKILL_SOURCES.map((source) => (
                   <LinkRow key={source} skill={skill} source={source} />
@@ -330,13 +334,13 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
         <Separator />
 
         <div>
-          <p className="mb-2 text-[11px] font-medium text-muted-foreground">
+          <h3 className="mb-2 text-2xs font-medium text-muted-foreground">
             {skill.kind === 'central' ? '真身路径' : '所在路径'}
-          </p>
-          <dl className="space-y-1.5 text-[11.5px]">
+          </h3>
+          <dl className="space-y-1.5 text-2xs">
             <div>
-              <dt className="text-muted-foreground/70">目录</dt>
-              <dd className="font-mono break-all text-muted-foreground">{skill.dirPath}</dd>
+              <dt className="text-muted-foreground">目录</dt>
+              <dd className="font-mono break-all text-foreground">{skill.dirPath}</dd>
             </div>
           </dl>
         </div>
@@ -345,19 +349,19 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
 
         <div>
           <div className="mb-2 flex items-baseline justify-between">
-            <p className="text-[11px] font-medium text-muted-foreground">Frontmatter</p>
-            <span className="text-[11px] text-muted-foreground/60">{fmEntries.length} 字段</span>
+            <h3 className="text-2xs font-medium text-muted-foreground">Frontmatter</h3>
+            <span className="text-2xs text-muted-foreground">{fmEntries.length} 字段</span>
           </div>
           {fmEntries.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground/70">（无）</p>
+            <p className="text-xs text-muted-foreground">无</p>
           ) : (
-            <dl className="space-y-2 text-[12px]">
+            <dl className="space-y-2 text-xs">
               {fmEntries.map(([k, v]) => (
                 <div key={k}>
-                  <dt className="truncate font-mono text-muted-foreground/70" title={k}>
+                  <dt className="truncate font-mono text-muted-foreground" title={k}>
                     {k}
                   </dt>
-                  <dd className="font-mono break-all text-foreground/90" title={formatValue(v)}>
+                  <dd className="font-mono break-all text-foreground" title={formatValue(v)}>
                     {formatValue(v)}
                   </dd>
                 </div>
@@ -370,13 +374,13 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
 
         <div>
           <div className="mb-2 flex items-baseline justify-between">
-            <p className="text-[11px] font-medium text-muted-foreground">文件</p>
-            <span className="text-[11px] text-muted-foreground/60">
+            <h3 className="text-2xs font-medium text-muted-foreground">文件</h3>
+            <span className="text-2xs text-muted-foreground">
               {skill.files.length} 个，共 {formatBytes(skill.byteSize)}
             </span>
           </div>
           {skill.files.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground/70">（空）</p>
+            <p className="text-xs text-muted-foreground">空</p>
           ) : (
             <div className="space-y-3">
               {(['md', 'script', 'asset', 'other'] as SkillFileKind[]).map((kind) => {
@@ -386,7 +390,7 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
                 const Icon = meta.icon
                 return (
                   <div key={kind}>
-                    <p className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+                    <p className="mb-1 flex items-center gap-1.5 text-2xs text-muted-foreground">
                       <Icon className="h-3 w-3" />
                       {meta.label}
                       <span className="tabular-nums">({list.length})</span>
@@ -406,7 +410,7 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
           )}
         </div>
 
-        <p className={cn('pb-2 text-[10.5px] text-muted-foreground/60')}>
+        <p className="pb-2 text-2xs text-muted-foreground">
           {skill.mtime ? `更新于 ${formatRelativeTime(skill.mtime)}` : '更新时间未知'}
         </p>
       </div>

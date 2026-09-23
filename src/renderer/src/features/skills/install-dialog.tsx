@@ -25,13 +25,13 @@ function ResultPanel({ result }: { result: InstallFromGitResult }): ReactElement
   const renamed = result.installed.filter((s) => s.name !== s.source)
 
   return (
-    <div className="space-y-2 rounded-md border bg-muted/30 px-3 py-2.5 text-[12.5px]">
+    <div className="space-y-2 rounded-md border bg-muted/30 px-3 py-2.5 text-xs">
       <p className="flex items-center gap-1.5 font-medium text-ok">
         <Check className="h-3.5 w-3.5" />
         已安装 {result.installed.length} 个 skill 到中央仓库
       </p>
       {result.installed.length > 0 && (
-        <ul className="max-h-40 space-y-0.5 overflow-y-auto font-mono text-[11.5px] text-muted-foreground">
+        <ul className="max-h-40 space-y-0.5 overflow-y-auto font-mono text-2xs text-muted-foreground">
           {result.installed.map((s) => (
             <li key={s.name} className="truncate" title={s.name}>
               {s.name}
@@ -41,17 +41,17 @@ function ResultPanel({ result }: { result: InstallFromGitResult }): ReactElement
         </ul>
       )}
       {renamed.length > 0 && (
-        <p className="text-[11.5px] text-muted-foreground">
+        <p className="text-2xs text-muted-foreground">
           有 {renamed.length} 个与已有 skill 同名，已自动改名并存，未覆盖原有内容。
         </p>
       )}
       {result.failed.length > 0 && (
         <div className="space-y-0.5">
-          <p className="flex items-center gap-1.5 font-medium text-destructive">
+          <p className="flex items-center gap-1.5 font-medium text-destructive-text">
             <AlertTriangle className="h-3.5 w-3.5" />
             {result.failed.length} 个安装失败
           </p>
-          <ul className="space-y-0.5 font-mono text-[11.5px] text-muted-foreground">
+          <ul className="space-y-0.5 font-mono text-2xs text-muted-foreground">
             {result.failed.map((f) => (
               <li key={f.name} className="break-all">
                 {f.name}：{f.message}
@@ -60,7 +60,7 @@ function ResultPanel({ result }: { result: InstallFromGitResult }): ReactElement
           </ul>
         </div>
       )}
-      <p className="text-[11.5px] text-muted-foreground/80">
+      <p className="text-2xs text-muted-foreground">
         已放进中央仓库，可在列表里按需链接到各个存储位置。
       </p>
     </div>
@@ -84,10 +84,10 @@ function Body({ onClose, onChanged }: Omit<InstallDialogProps, 'open'>): ReactEl
         toast.success(`已从仓库安装 ${next.installed.length} 个 skill`)
         onChanged()
       } else {
-        toast.error(next.message)
+        toast.error(`${next.message}，检查地址后可重试`)
       }
     } catch (err) {
-      toast.error(`安装失败：${err instanceof Error ? err.message : String(err)}`)
+      toast.error(`安装失败：${err instanceof Error ? err.message : String(err)}，检查地址后可重试`)
     } finally {
       setBusy(false)
     }
@@ -96,11 +96,11 @@ function Body({ onClose, onChanged }: Omit<InstallDialogProps, 'open'>): ReactEl
   return (
     <>
       <DialogHeader className="gap-1.5">
-        <DialogTitle className="flex items-center gap-2 text-[15px]">
-          <GitBranch className="h-4 w-4 text-primary" />
-          从 Git 仓库安装 Skill
+        <DialogTitle className="flex items-center gap-2 text-base">
+          <GitBranch className="h-4 w-4" />
+          从 Git 仓库安装 skill
         </DialogTitle>
-        <DialogDescription className="text-[12px]">
+        <DialogDescription className="text-xs">
           只下载仓库里的 <span className="font-mono">skills/</span> 目录，不会拉取整个仓库。
         </DialogDescription>
       </DialogHeader>
@@ -118,14 +118,14 @@ function Body({ onClose, onChanged }: Omit<InstallDialogProps, 'open'>): ReactEl
           }}
           disabled={busy}
           placeholder="https://github.com/anthropics/skills"
-          className="h-9 font-mono text-[12.5px]"
+          className="h-9 font-mono text-xs"
           aria-label="Git 仓库地址"
         />
-        <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-          用浅克隆 + 部分克隆 + 稀疏检出，只取 <span className="font-mono">skills/</span>{' '}
-          下的文件与 SKILL.md；仓库体积很大也不会整仓下载。
+        <p className="text-2xs leading-relaxed text-muted-foreground">
+          用浅克隆 + 部分克隆 + 稀疏检出，只取 <span className="font-mono">skills/</span> 下的文件与
+          SKILL.md；仓库体积很大也不会整仓下载。
           {busy && (
-            <span className="mt-1 flex items-center gap-1.5 text-foreground/80">
+            <span className="mt-1 flex items-center gap-1.5 text-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
               正在下载并导入，仓库大时可能需要一会儿…
             </span>
@@ -136,13 +136,14 @@ function Body({ onClose, onChanged }: Omit<InstallDialogProps, 'open'>): ReactEl
       {result && <ResultPanel result={result} />}
 
       <DialogFooter>
-        <Button variant="outline" size="sm" className="h-8 text-[12.5px]" onClick={onClose}>
+        <Button variant="outline" size="sm" static className="h-8 text-xs" onClick={onClose}>
           关闭
         </Button>
         {result === null && (
           <Button
             size="sm"
-            className="h-8 gap-1.5 text-[12.5px]"
+            static
+            className="h-8 gap-1.5 text-xs"
             disabled={busy || url.trim() === ''}
             onClick={() => void submit()}
           >

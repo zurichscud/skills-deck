@@ -16,22 +16,44 @@ export interface TitleBarProps {
 
 export function TitleBar({ theme, onThemeToggle, actions }: TitleBarProps): ReactElement {
   return (
-    <header className="drag-region flex h-11 shrink-0 items-center border-b border-sidebar-border bg-sidebar pr-3 pl-[86px]">
-      <div className="no-drag ml-auto flex shrink-0 items-center gap-1">
+    <header className="drag-region flex h-11 shrink-0 items-center border-b border-sidebar-border bg-sidebar ps-[86px] pe-3">
+      <div className="no-drag ms-auto flex shrink-0 items-center gap-1">
         {actions}
         <Button
           variant="ghost"
           size="icon"
+          static
           className="h-7 w-7"
           onClick={onThemeToggle}
           aria-label={theme === 'dark' ? '切换到浅色' : '切换到深色'}
         >
-          {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+          {/* 双图标常驻 DOM，交叉淡入（scale 0.25→1 / blur 4px→0） */}
+          <span className="relative block h-3.5 w-3.5">
+            <Sun
+              className={cn(
+                'absolute inset-0 h-3.5 w-3.5 transition-[opacity,scale,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]',
+                theme === 'dark'
+                  ? 'blur-0 scale-100 opacity-100'
+                  : 'scale-[0.25] opacity-0 blur-[4px]',
+              )}
+            />
+            <Moon
+              className={cn(
+                'absolute inset-0 h-3.5 w-3.5 transition-[opacity,scale,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]',
+                theme === 'light'
+                  ? 'blur-0 scale-100 opacity-100'
+                  : 'scale-[0.25] opacity-0 blur-[4px]',
+              )}
+            />
+          </span>
         </Button>
       </div>
     </header>
   )
 }
+
+const FOCUS_RING =
+  'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 function NavItem({
   active,
@@ -50,8 +72,10 @@ function NavItem({
     <button
       type="button"
       onClick={onClick}
+      aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex w-full items-center gap-2 border-l-2 px-2 py-1.5 text-left text-[13px] transition-colors',
+        FOCUS_RING,
+        'flex w-full items-center gap-2 border-s-2 px-2 py-1.5 text-left text-sm transition-colors',
         active
           ? 'border-primary bg-sidebar-accent font-medium text-foreground'
           : 'border-transparent text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
@@ -60,7 +84,7 @@ function NavItem({
       <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       {count !== undefined && (
-        <span className="font-mono text-[11px] text-muted-foreground/70 tabular-nums">{count}</span>
+        <span className="font-mono text-2xs text-muted-foreground tabular-nums">{count}</span>
       )}
     </button>
   )
@@ -69,7 +93,7 @@ function NavItem({
 function NavSection({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
     <div>
-      <p className="px-2 pt-1 pb-1.5 text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className="px-2 pt-1 pb-1.5 text-2xs font-medium text-muted-foreground">{label}</p>
       {children}
     </div>
   )
@@ -119,16 +143,16 @@ export function Sidebar({ view, onViewChange, menu, counts }: SidebarProps): Rea
   const items = resolveMenu(menu)
 
   return (
-    <aside className="flex w-[212px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-sidebar-border bg-sidebar px-2 py-3">
+    <aside className="flex w-[212px] shrink-0 flex-col gap-4 overflow-y-auto border-e border-sidebar-border bg-sidebar px-2 py-3">
       <div className="flex items-center gap-2 px-2">
         <img
           src="./icon.png"
           alt=""
           aria-hidden
           draggable={false}
-          className="h-5 w-5 shrink-0 rounded-[6px]"
+          className="img-ring h-5 w-5 shrink-0 rounded-md"
         />
-        <span className="truncate text-[14px] font-semibold tracking-tight">Skills Deck</span>
+        <span className="truncate text-base font-semibold tracking-tight">Skills Deck</span>
       </div>
 
       {MENU_GROUP_ORDER.map((group) => {

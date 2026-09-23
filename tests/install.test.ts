@@ -32,7 +32,10 @@ async function git(cwd: string, args: string[]): Promise<void> {
 
 async function makeSkill(dir: string, name: string): Promise<void> {
   await mkdir(dir, { recursive: true })
-  await writeFile(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: desc\n---\n\n# ${name}\n`)
+  await writeFile(
+    join(dir, 'SKILL.md'),
+    `---\nname: ${name}\ndescription: desc\n---\n\n# ${name}\n`,
+  )
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -106,7 +109,9 @@ describe('SkillStore.installFromGit', () => {
     expect(await readFile(join(root, 'central', 'alpha', 'SKILL.md'), 'utf8')).toContain(
       'name: alpha',
     )
-    expect(await readFile(join(root, 'central', 'beta', 'SKILL.md'), 'utf8')).toContain('name: beta')
+    expect(await readFile(join(root, 'central', 'beta', 'SKILL.md'), 'utf8')).toContain(
+      'name: beta',
+    )
     // 仓库里的其它目录不会被带进中央仓库
     expect(await exists(join(root, 'central', 'docs'))).toBe(false)
     expect(await exists(join(root, 'central', 'not-a-skill'))).toBe(false)

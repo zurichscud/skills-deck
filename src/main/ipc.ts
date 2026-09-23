@@ -155,14 +155,11 @@ export function registerIpc(): void {
     },
   )
 
-  ipcMain.handle(
-    'skills:adoptAllUnmanaged',
-    async (): Promise<AdoptAllResult | FailResult> => {
-      const result = await skillStore.adoptAllUnmanaged()
-      if (result.ok) broadcastSkillsChanged()
-      return result
-    },
-  )
+  ipcMain.handle('skills:adoptAllUnmanaged', async (): Promise<AdoptAllResult | FailResult> => {
+    const result = await skillStore.adoptAllUnmanaged()
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
 
   ipcMain.handle(
     'skills:adoptManyUnmanaged',

@@ -33,11 +33,11 @@ function BatchBody({ skills }: { skills: Skill[] }): ReactElement {
   const bytes = realDirs.reduce((n, s) => n + s.byteSize, 0)
 
   return (
-    <div className="space-y-2 text-[13px]">
+    <div className="space-y-2 text-sm">
       <p>
         将从各自所在位置删除选中的 <b>{skills.length}</b> 个条目，<b>不可恢复</b>。
       </p>
-      <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded-md border bg-muted/40 px-3 py-2 font-mono text-[11.5px] break-all">
+      <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded-md border bg-muted/40 px-3 py-2 font-mono text-2xs break-all">
         {skills.map((s) => (
           <li key={s.id}>{s.dirPath}</li>
         ))}
@@ -84,21 +84,21 @@ export function DeleteDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <AlertTriangle className="h-4 w-4 text-destructive-text" />
             {skills.length > 1 ? `永久删除 ${skills.length} 个条目？` : `永久删除 ${skill.name}？`}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             {skills.length > 1 ? (
               <BatchBody skills={skills} />
             ) : (
-              <div className="space-y-2 text-[13px]">
+              <div className="space-y-2 text-sm">
                 {isCentral ? (
                   <>
                     <p>
                       将从中央仓库中<b>永久删除真身</b>，并清理指向它的软链。
                       <b>不可恢复</b>（若已提交 git，可从历史中找回）。
                     </p>
-                    <div className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-[11.5px] break-all">
+                    <div className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-2xs break-all">
                       {skill.dirPath}
                     </div>
                     <p className="text-muted-foreground">
@@ -108,7 +108,7 @@ export function DeleteDialog({
                     {links.length > 0 ? (
                       <div className="text-muted-foreground">
                         同时移除以下软链：
-                        <ul className="mt-1 space-y-0.5 font-mono text-[11px] break-all">
+                        <ul className="mt-1 space-y-0.5 font-mono text-2xs break-all">
                           {links.map((l) => (
                             <li key={l.source}>
                               {SOURCE_LABEL[l.source]}：{l.path}
@@ -119,7 +119,7 @@ export function DeleteDialog({
                     ) : (
                       <p className="text-muted-foreground">当前没有任何存储位置链接到它。</p>
                     )}
-                    <p className="text-[12px] text-muted-foreground/70">
+                    <p className="text-xs text-muted-foreground">
                       其它未纳管位置（如 ~/.agents/skills）中的同名链接不会被清理，会变成失效链接。
                     </p>
                   </>
@@ -128,7 +128,7 @@ export function DeleteDialog({
                     <p>
                       这是一个<b>未纳管</b>条目，将直接从其所在位置删除，<b>不可恢复</b>。
                     </p>
-                    <div className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-[11.5px] break-all">
+                    <div className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-2xs break-all">
                       {skill.dirPath}
                     </div>
                     {isBrokenLink(skill) ? (

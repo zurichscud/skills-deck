@@ -32,7 +32,11 @@ async function git(args: string[], cwd?: string): Promise<GitRun> {
     return { ok: true, message: '' }
   } catch (err) {
     const e = err as { stderr?: string; message?: string }
-    const message = (e.stderr || e.message || 'git 执行失败').trim().split('\n').slice(-3).join('\n')
+    const message = (e.stderr || e.message || 'git 执行失败')
+      .trim()
+      .split('\n')
+      .slice(-3)
+      .join('\n')
     return { ok: false, message }
   }
 }

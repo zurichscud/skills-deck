@@ -11,7 +11,6 @@ import { FolderOpen, GitBranch, Package, Settings, Sparkles } from 'lucide-react
 import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react'
 
 import { AgentIcon } from '@/components/agent-icons'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -104,7 +103,7 @@ export function SettingsPage({
     icon?: SkillSource | 'central',
   ): ReactElement => (
     <div key={key} className="grid grid-cols-[112px_1fr_auto] items-center gap-2">
-      <Label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+      <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {icon === 'central' ? (
           <Package className="h-3.5 w-3.5" />
         ) : icon ? (
@@ -119,7 +118,7 @@ export function SettingsPage({
         onKeyDown={(e) => {
           if (e.key === 'Enter') commitPath()
         }}
-        className="h-8 font-mono text-[11.5px]"
+        className="h-8 font-mono text-2xs"
         spellCheck={false}
         aria-label={label}
         title={value}
@@ -127,6 +126,7 @@ export function SettingsPage({
       <Button
         variant="outline"
         size="icon"
+        static
         className="h-8 w-8 shrink-0"
         onClick={() => void pick(key)}
         aria-label={`选择${label}目录`}
@@ -147,28 +147,28 @@ export function SettingsPage({
               </span>
               <h1 className="truncate text-xl font-semibold tracking-tight">设置</h1>
               {version && (
-                <span className="shrink-0 rounded-md border px-2 py-0.5 font-mono text-[11px] text-muted-foreground tabular-nums">
+                <span className="shrink-0 rounded-md border px-2 py-0.5 font-mono text-2xs text-muted-foreground tabular-nums">
                   v{version}
                 </span>
               )}
             </div>
-            <p className="mt-1 truncate text-[12px] text-muted-foreground">
+            <p className="mt-1 truncate text-xs text-muted-foreground">
               修改即自动保存并立即生效；调整仓库地址后会重新扫描。
             </p>
           </div>
         </div>
 
         {!draft ? (
-          <div className="flex flex-1 items-center justify-center text-[13px] text-muted-foreground">
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
             加载中…
           </div>
         ) : (
           <div className="mx-auto w-full max-w-2xl space-y-6 p-4">
             <section className="grid gap-3">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-[12px] font-medium text-muted-foreground">中央仓库</p>
+                <h2 className="text-xs font-medium text-muted-foreground">中央仓库</h2>
                 {info && (
-                  <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
                     <GitBranch className="h-3 w-3" />
                     {info.git.available ? (
                       info.git.lastCommit ? (
@@ -183,7 +183,7 @@ export function SettingsPage({
                 )}
               </div>
               {pathRow('centralRoot', '真身目录', draft.centralRoot, 'central')}
-              <p className="text-[11px] text-muted-foreground/60">
+              <p className="text-2xs text-muted-foreground">
                 所有 skill 的唯一真身都存放在这里，并由 git
                 记录每次结构变更；各存储位置只放指向它的软链。
               </p>
@@ -192,9 +192,9 @@ export function SettingsPage({
             <Separator />
 
             <section className="grid gap-3">
-              <p className="text-[12px] font-medium text-muted-foreground">存储位置</p>
+              <h2 className="text-xs font-medium text-muted-foreground">存储位置</h2>
               {SOURCES.map((s) => pathRow(s, SOURCE_LABEL[s], draft.sourceRoots[s], s))}
-              <p className="text-[11px] text-muted-foreground/60">
+              <p className="text-2xs text-muted-foreground">
                 各 agent 读取 skill
                 的全局目录；启用即在此创建软链，停用即删除软链，真身始终留在中央仓库。
               </p>
@@ -204,11 +204,11 @@ export function SettingsPage({
 
             <section className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
               <div className="min-w-0">
-                <p className="flex items-center gap-1.5 text-[13px] font-medium">
+                <h2 className="flex items-center gap-1.5 text-sm font-medium">
                   <Sparkles className="h-3.5 w-3.5" />
-                  未纳管的 Skill
-                </p>
-                <p className="mt-0.5 text-[12px] text-muted-foreground">
+                  未纳管的 skill
+                </h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {unmanaged
                     ? `三个存储位置里有 ${unmanaged.total} 个 skill 尚未纳入中央仓库${
                         unmanaged.conflicts > 0
@@ -221,7 +221,8 @@ export function SettingsPage({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 text-[12.5px]"
+                static
+                className="h-8 text-xs"
                 onClick={onOpenUnmanaged}
               >
                 查看未纳管
@@ -232,8 +233,8 @@ export function SettingsPage({
 
             <section className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
               <div className="min-w-0">
-                <p className="text-[13px] font-medium">关闭行为</p>
-                <p className="mt-0.5 text-[12px] text-muted-foreground">
+                <h2 className="text-sm font-medium">关闭行为</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   选择点击窗口关闭按钮后的应用行为。
                 </p>
               </div>
@@ -248,7 +249,7 @@ export function SettingsPage({
                     <label
                       key={b}
                       className={cn(
-                        'cursor-pointer rounded-[4px] px-3 py-1.5 text-[12.5px] transition-colors has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring',
+                        'cursor-pointer rounded-sm px-3 py-1.5 text-xs transition-colors has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50',
                         active
                           ? 'bg-secondary font-medium text-foreground'
                           : 'text-muted-foreground hover:text-foreground',
@@ -273,8 +274,8 @@ export function SettingsPage({
 
             <section className="grid gap-3">
               <div className="min-w-0">
-                <p className="text-[13px] font-medium">菜单</p>
-                <p className="mt-0.5 text-[12px] text-muted-foreground">
+                <h2 className="text-sm font-medium">菜单</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   调整侧边栏菜单的显示与顺序；隐藏的菜单不会出现在侧边栏。
                 </p>
               </div>
@@ -282,7 +283,7 @@ export function SettingsPage({
             </section>
 
             {info && (
-              <p className="pb-2 font-mono text-[10.5px] text-muted-foreground/50">
+              <p className="pb-2 font-mono text-2xs text-muted-foreground">
                 配置目录 {info.managedRoot}
               </p>
             )}
@@ -291,10 +292,4 @@ export function SettingsPage({
       </div>
     </ScrollArea>
   )
-}
-
-export function GitBadge({ info }: { info: AppInfo | null }): ReactElement | null {
-  if (!info) return null
-  if (!info.git.available) return <Badge variant="outline">无 git</Badge>
-  return <Badge variant="outline">{info.git.lastCommit ?? '暂无提交'}</Badge>
 }
