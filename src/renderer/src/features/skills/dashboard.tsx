@@ -23,7 +23,6 @@ export function Dashboard({ skills, onJump }: DashboardProps): ReactElement {
   const totalBytes = skills.reduce((n, s) => n + s.byteSize, 0)
 
   const bySource = (src: SkillSource): Skill[] => skills.filter((s) => s.source === src)
-  const maxSource = Math.max(1, ...SOURCES.map((s) => bySource(s).length))
 
   return (
     <ScrollArea className="h-full">
@@ -108,14 +107,7 @@ export function Dashboard({ skills, onJump }: DashboardProps): ReactElement {
                       <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
                     </div>
                     <div className="mt-2 px-1">
-                      <div
-                        className="h-1.5"
-                        style={{
-                          width: `${(list.length / maxSource) * 100}%`,
-                          background: `var(--source-${src})`,
-                        }}
-                      />
-                      <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+                      <p className="text-[11.5px] text-muted-foreground">
                         {on} 启用，{off} 停用，
                         {formatBytes(list.reduce((n, s) => n + s.byteSize, 0))}
                       </p>

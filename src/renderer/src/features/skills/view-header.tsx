@@ -54,11 +54,6 @@ export function ViewHeader({
       ? (info?.sourceRoots[view.source] ?? '…')
       : `合并读取 ${allowed.length} 个位置，共 ${scoped.length} 条 skill（${unique} 个不重复）`
 
-  const statLine =
-    view.kind === 'location'
-      ? `${scoped.filter((s) => s.enabled && !s.builtin).length} 启用，${scoped.filter((s) => !s.enabled && !s.builtin).length} 停用，${scoped.filter((s) => s.builtin).length} 内置`
-      : null
-
   return (
     <div className="flex shrink-0 items-center gap-4 border-b px-4 py-3">
       <div className="min-w-0 flex-1">
@@ -66,21 +61,8 @@ export function ViewHeader({
           <AgentIcon agent={agent} className="h-8 w-8 shrink-0" />
           <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
         </div>
-        <p
-          className="mt-1 truncate text-[12px] text-muted-foreground"
-          title={pathLine + (statLine ? `；${statLine}` : '')}
-        >
-          {view.kind === 'location' ? (
-            <>
-              <span className="font-mono text-[11.5px]">{pathLine}</span>
-              {statLine && <span>；{statLine}</span>}
-            </>
-          ) : (
-            <>
-              {pathLine}
-              {statLine && `；${statLine}`}
-            </>
-          )}
+        <p className="mt-1 truncate font-mono text-[11.5px] text-muted-foreground" title={pathLine}>
+          {pathLine}
         </p>
       </div>
 

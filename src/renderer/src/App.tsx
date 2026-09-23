@@ -126,6 +126,17 @@ export default function App(): ReactElement {
     [skills, selectedId],
   )
 
+  /** 各状态筛选按钮角标：视图 + 搜索词范围内计数，不随当前 status 变化 */
+  const statusCounts = useMemo(() => {
+    const base = filterSkills(skills, query, view, 'all')
+    return {
+      all: base.length,
+      enabled: base.filter((s) => s.enabled && !s.builtin).length,
+      disabled: base.filter((s) => !s.enabled && !s.builtin).length,
+      builtin: base.filter((s) => s.builtin).length,
+    } as Record<StatusFilter, number>
+  }, [skills, query, view])
+
   const markPending = useCallback((ids: Iterable<string>, on: boolean) => {
     setPendingIds((prev) => {
       const next = new Set(prev)
@@ -386,10 +397,13 @@ export default function App(): ReactElement {
                             key={t.key}
                             size="sm"
                             variant={status === t.key ? 'secondary' : 'ghost'}
-                            className="h-6 px-2 text-[12px]"
+                            className="h-6 gap-1.5 px-2 text-[12px]"
                             onClick={() => setStatus(t.key)}
                           >
                             {t.label}
+                            <span className="font-mono text-[11px] text-muted-foreground/70 tabular-nums">
+                              {statusCounts[t.key]}
+                            </span>
                           </Button>
                         ))}
                       </div>
