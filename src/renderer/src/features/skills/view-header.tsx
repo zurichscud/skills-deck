@@ -1,11 +1,12 @@
-import { type ReactElement, type RefObject } from 'react'
+import { SOURCE_LABEL, type AppInfo, type Skill, type SkillSource } from '@shared/types'
 import { Plus, RefreshCw, Search } from 'lucide-react'
+import { type ReactElement, type RefObject } from 'react'
+
 import { AgentIcon } from '@/components/agent-icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AGENT_SOURCES, skillInView, type View } from '@/hooks/use-skills'
 import { cn } from '@/lib/utils'
-import { AGENT_SOURCES, type View } from '@/hooks/use-skills'
-import { SOURCE_LABEL, type AppInfo, type Skill, type SkillSource } from '@shared/types'
 
 export interface ViewHeaderProps {
   view: Exclude<View, { kind: 'dashboard' | 'settings' }>
@@ -19,9 +20,15 @@ export interface ViewHeaderProps {
   onAdd: () => void
 }
 
-function titleOf(view: Exclude<View, { kind: 'dashboard' | 'settings' }>): { agent: SkillSource; title: string } {
+function titleOf(view: Exclude<View, { kind: 'dashboard' | 'settings' }>): {
+  agent: SkillSource
+  title: string
+} {
   if (view.kind === 'location') return { agent: view.source, title: SOURCE_LABEL[view.source] }
-  return { agent: view.agent as SkillSource, title: SOURCE_LABEL[view.agent as SkillSource] }
+  return {
+    agent: view.agent as SkillSource,
+    title: SOURCE_LABEL[view.agent as SkillSource],
+  }
 }
 
 export function ViewHeader({
@@ -33,17 +40,18 @@ export function ViewHeader({
   searchRef,
   refreshing,
   onRefresh,
-  onAdd
+  onAdd,
 }: ViewHeaderProps): ReactElement {
   const { agent, title } = titleOf(view)
 
-  const allowed: SkillSource[] = view.kind === 'location' ? [view.source] : AGENT_SOURCES[view.agent]
-  const scoped = skills.filter((s) => allowed.includes(s.source))
+  const allowed: SkillSource[] =
+    view.kind === 'location' ? [view.source] : AGENT_SOURCES[view.agent]
+  const scoped = skills.filter((s) => skillInView(s, view))
   const unique = new Set(scoped.map((s) => s.name)).size
 
   const pathLine =
     view.kind === 'location'
-      ? info?.sourceRoots[view.source] ?? '…'
+      ? (info?.sourceRoots[view.source] ?? '…')
       : `合并读取 ${allowed.length} 个位置，共 ${scoped.length} 条 skill（${unique} 个不重复）`
 
   const statLine =
@@ -57,12 +65,6 @@ export function ViewHeader({
         <div className="flex items-center gap-2.5">
           <AgentIcon agent={agent} className="h-8 w-8 shrink-0" />
           <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
-          <span className="shrink-0 rounded-md border px-2 py-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">
-            {scoped.length}
-          </span>
-          {view.kind === 'workspace' && (
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">工作区</span>
-          )}
         </div>
         <p
           className="mt-1 truncate text-[12px] text-muted-foreground"
@@ -84,16 +86,16 @@ export function ViewHeader({
 
       <div className="flex shrink-0 items-center gap-2">
         <div className="relative w-[300px]">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             ref={searchRef}
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="搜索 Agent Skills..."
-            className="h-9 pl-8 pr-14 text-[13px]"
+            className="h-9 pr-14 pl-8 text-[13px]"
             aria-label="搜索 skill"
           />
-          <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          <kbd className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
             ⌘K
           </kbd>
         </div>

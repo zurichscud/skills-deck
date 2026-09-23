@@ -1,8 +1,17 @@
 import { promises as fs } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
+
+import type {
+  CopyResult,
+  CopyStrategy,
+  FailResult,
+  SetEnabledResult,
+  Skill,
+  SkillSource,
+} from '@shared/types'
+
 import { disabledDirFor, disabledRoot, disabledSourceRootFor, sourceDirFor } from './paths'
 import { scanAll } from './scanner'
-import type { CopyResult, CopyStrategy, FailResult, SetEnabledResult, Skill, SkillSource } from '@shared/types'
 
 function fail(code: FailResult['code'], message: string, conflictAt?: string): FailResult {
   return { ok: false, code, message, ...(conflictAt ? { conflictAt } : {}) }
@@ -119,7 +128,9 @@ export class SkillStore {
     if (skill.enabled === enabled) return { ok: true }
 
     const from = skill.dirPath
-    const to = enabled ? sourceDirFor(skill.source, skill.relDir) : disabledDirFor(skill.source, skill.relDir)
+    const to = enabled
+      ? sourceDirFor(skill.source, skill.relDir)
+      : disabledDirFor(skill.source, skill.relDir)
 
     if (!(await exists(from))) return fail('NOT_FOUND', 'skill 目录不存在')
     if (await exists(to)) return fail('CONFLICT', '目标位置已存在同名目录', to)
@@ -174,7 +185,7 @@ export class SkillStore {
     return {
       ok: true,
       outcome: conflict && strategy === 'overwrite' ? 'overwritten' : 'created',
-      targetName: destName
+      targetName: destName,
     }
   }
 

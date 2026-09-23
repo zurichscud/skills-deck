@@ -1,11 +1,12 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+
 import type { SkillSource } from '@shared/types'
 
 const ENV_SOURCE: Record<SkillSource, string> = {
   claude: 'SKILLSDECK_SOURCE_ROOT_CLAUDE',
   codex: 'SKILLSDECK_SOURCE_ROOT_CODEX',
-  opencode: 'SKILLSDECK_SOURCE_ROOT_OPENCODE'
+  opencode: 'SKILLSDECK_SOURCE_ROOT_OPENCODE',
 }
 
 interface PathOverrides {

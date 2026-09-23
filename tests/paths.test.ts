@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { disabledDirFor, makeSkillId, sourceDirFor } from '../src/main/paths'
 
 describe('paths', () => {

@@ -1,5 +1,7 @@
-import { BrowserWindow, app, shell } from 'electron'
 import { join } from 'node:path'
+
+import { BrowserWindow, app, shell } from 'electron'
+
 import { registerIpc, wireCloseBehavior } from './ipc'
 
 function showWindow(win: BrowserWindow): void {
@@ -27,8 +29,8 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      spellcheck: false
-    }
+      spellcheck: false,
+    },
   })
 
   win.on('ready-to-show', () => win.show())

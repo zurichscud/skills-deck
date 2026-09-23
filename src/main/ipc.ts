@@ -1,9 +1,5 @@
-import { BrowserWindow, Tray, app, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { join } from 'node:path'
-import { currentSettings, loadSettings, saveSettings } from './config'
-import { disabledRoot, managedRoot, sourceRootFor } from './paths'
-import { skillStore } from './store'
-import { broadcastSkillsChanged, startWatcher } from './watcher'
+
 import type {
   AppInfo,
   AppSettings,
@@ -11,19 +7,26 @@ import type {
   CopyStrategy,
   SetEnabledResult,
   Skill,
-  SkillSource
+  SkillSource,
 } from '@shared/types'
+import { BrowserWindow, Tray, app, dialog, ipcMain, nativeImage, shell } from 'electron'
+
+import { currentSettings, loadSettings, saveSettings } from './config'
+import { disabledRoot, managedRoot, sourceRootFor } from './paths'
+import { skillStore } from './store'
+import { broadcastSkillsChanged, startWatcher } from './watcher'
 
 export function registerIpc(): void {
   ipcMain.handle('skills:info', (): AppInfo => ({
     platform: process.platform as AppInfo['platform'],
+    version: app.getVersion(),
     managedRoot: managedRoot(),
     disabledRoot: disabledRoot(),
     sourceRoots: {
       claude: sourceRootFor('claude'),
       codex: sourceRootFor('codex'),
-      opencode: sourceRootFor('opencode')
-    }
+      opencode: sourceRootFor('opencode'),
+    },
   }))
 
   ipcMain.handle('skills:list', (): Skill[] => skillStore.list())
@@ -34,7 +37,9 @@ export function registerIpc(): void {
     return skillStore.list()
   })
 
-  ipcMain.handle('skills:readFile', (_e, skillId: string, relPath: string) => skillStore.readFile(skillId, relPath))
+  ipcMain.handle('skills:readFile', (_e, skillId: string, relPath: string) =>
+    skillStore.readFile(skillId, relPath),
+  )
 
   ipcMain.handle(
     'skills:setEnabled',
@@ -42,28 +47,32 @@ export function registerIpc(): void {
       const result = await skillStore.setEnabled(skillId, enabled)
       if (result.ok) broadcastSkillsChanged()
       return result
-    }
+    },
   )
 
   ipcMain.handle(
     'skills:copyTo',
-    async (_e, skillId: string, target: SkillSource, strategy: CopyStrategy): Promise<CopyResult> => {
+    async (
+      _e,
+      skillId: string,
+      target: SkillSource,
+      strategy: CopyStrategy,
+    ): Promise<CopyResult> => {
       const result = await skillStore.copyTo(skillId, target, strategy)
       if (result.ok) broadcastSkillsChanged()
       return result
-    }
+    },
   )
 
-  ipcMain.handle('skills:revealInFinder', (_e, skillId: string) => skillStore.revealInFinder(skillId))
-
-  ipcMain.handle(
-    'skills:delete',
-    async (_e, skillId: string): Promise<SetEnabledResult> => {
-      const result = await skillStore.deleteSkill(skillId)
-      if (result.ok) broadcastSkillsChanged()
-      return result
-    }
+  ipcMain.handle('skills:revealInFinder', (_e, skillId: string) =>
+    skillStore.revealInFinder(skillId),
   )
+
+  ipcMain.handle('skills:delete', async (_e, skillId: string): Promise<SetEnabledResult> => {
+    const result = await skillStore.deleteSkill(skillId)
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
 
   ipcMain.handle('settings:get', async (): Promise<AppSettings> => currentSettings())
 
@@ -82,7 +91,7 @@ export function registerIpc(): void {
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     const result = await dialog.showOpenDialog(win, {
       title: '选择目录',
-      properties: ['openDirectory', 'createDirectory']
+      properties: ['openDirectory', 'createDirectory'],
     })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
   })
@@ -143,7 +152,7 @@ export function wireCloseBehavior(win: BrowserWindow, onShow: () => void): void 
         cancelId: 2,
         title: '关闭 Skills Deck',
         message: '要如何处理这个窗口？',
-        detail: '可在侧栏「设置」中更改此行为。'
+        detail: '可在侧栏「设置」中更改此行为。',
       })
       .then(({ response }) => {
         if (response === 0) {

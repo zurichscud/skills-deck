@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import {
+  DEFAULT_MENU_PREFS,
+  type AppInfo,
+  type AppSettings,
+  type ConflictStrategy,
+  type CopyResult,
+  type Skill,
+  type SkillSource,
+} from '@shared/types'
 import { Ban, Check, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { toast, Toaster } from 'sonner'
+
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -15,11 +25,13 @@ import { ViewHeader } from '@/features/skills/view-header'
 import {
   AGENT_SOURCES,
   filterSkills,
+  isCodexView,
+  skillInView,
   useSkills,
+  type AgentId,
   type StatusFilter,
-  type View
+  type View,
 } from '@/hooks/use-skills'
-import type { AppInfo, AppSettings, ConflictStrategy, CopyResult, Skill, SkillSource } from '@shared/types'
 
 type Theme = 'light' | 'dark'
 
@@ -27,7 +39,7 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'enabled', label: '启用中' },
   { key: 'disabled', label: '已停用' },
-  { key: 'builtin', label: '内置' }
+  { key: 'builtin', label: '内置' },
 ]
 
 function readStoredTheme(): Theme {
@@ -53,18 +65,15 @@ export default function App(): ReactElement {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [theme, setTheme] = useState<Theme>(readStoredTheme)
   const [info, setInfo] = useState<AppInfo | null>(null)
+  const [settings, setSettings] = useState<AppSettings | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
   const searchRef = useRef<HTMLInputElement>(null)
-  const lastViewRef = useRef<View>({ kind: 'workspace', agent: 'opencode' })
   const detailRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
-    if (view.kind !== 'settings') lastViewRef.current = view
-  }, [view])
-
-  useEffect(() => {
     void window.api.info().then(setInfo)
+    void window.api.getSettings().then(setSettings)
   }, [])
 
   useEffect(() => {
@@ -90,32 +99,40 @@ export default function App(): ReactElement {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const visible = useMemo(() => filterSkills(skills, query, view, status), [skills, query, view, status])
+  const visible = useMemo(
+    () => filterSkills(skills, query, view, status),
+    [skills, query, view, status],
+  )
 
   const counts = useMemo(() => {
     const bySource = { claude: 0, codex: 0, opencode: 0 } as Record<SkillSource, number>
     for (const s of skills) bySource[s.source] += 1
     const byAgent = { claude: 0, codex: 0, opencode: 0 } as Record<string, number>
-    for (const agent of Object.keys(AGENT_SOURCES) as Array<keyof typeof AGENT_SOURCES>) {
-      const set = AGENT_SOURCES[agent]
-      byAgent[agent] = skills.filter((s) => set.includes(s.source)).length
+    for (const agent of Object.keys(AGENT_SOURCES) as AgentId[]) {
+      byAgent[agent] = skills.filter((s) => skillInView(s, { kind: 'workspace', agent })).length
     }
     return {
       all: skills.length,
       bySource,
-      byAgent: byAgent as Record<'claude' | 'codex' | 'opencode', number>,
+      byAgent: byAgent as Record<AgentId, number>,
       enabled: skills.filter((s) => s.enabled && !s.builtin).length,
       disabled: skills.filter((s) => !s.enabled && !s.builtin).length,
-      builtin: skills.filter((s) => s.builtin).length
+      builtin: skills.filter((s) => s.builtin).length,
     }
   }, [skills])
 
-  const selected = useMemo(() => skills.find((s) => s.id === selectedId) ?? null, [skills, selectedId])
+  const selected = useMemo(
+    () => skills.find((s) => s.id === selectedId) ?? null,
+    [skills, selectedId],
+  )
 
   const markPending = useCallback((ids: Iterable<string>, on: boolean) => {
     setPendingIds((prev) => {
       const next = new Set(prev)
-      for (const id of ids) on ? next.add(id) : next.delete(id)
+      for (const id of ids) {
+        if (on) next.add(id)
+        else next.delete(id)
+      }
       return next
     })
   }, [])
@@ -129,19 +146,21 @@ export default function App(): ReactElement {
       else toast.error(`${skill.name}：${result.message}`)
       await reload()
     },
-    [markPending, reload]
+    [markPending, reload],
   )
 
   const batchSetEnabled = useCallback(
     async (next: boolean): Promise<void> => {
-      const targets = skills.filter((s) => checkedIds.has(s.id) && !s.builtin && s.entryKind !== 'broken')
+      const targets = skills.filter(
+        (s) => checkedIds.has(s.id) && !s.builtin && s.entryKind !== 'broken',
+      )
       if (targets.length === 0) {
         toast.info('所选 skill 均不可操作')
         return
       }
       markPending(
         targets.map((s) => s.id),
-        true
+        true,
       )
       let okCount = 0
       const errors: string[] = []
@@ -152,14 +171,14 @@ export default function App(): ReactElement {
       }
       markPending(
         targets.map((s) => s.id),
-        false
+        false,
       )
       if (okCount > 0) toast.success(`已${next ? '启用' : '停用'} ${okCount} 个 skill`)
       if (errors.length > 0) toast.error(errors.slice(0, 3).join('\n'))
       setCheckedIds(new Set())
       await reload()
     },
-    [skills, checkedIds, markPending, reload]
+    [skills, checkedIds, markPending, reload],
   )
 
   const reveal = useCallback(async (skill: Skill): Promise<void> => {
@@ -171,17 +190,26 @@ export default function App(): ReactElement {
   }, [])
 
   const confirmCopy = useCallback(
-    async (skill: Skill, target: SkillSource, strategy: ConflictStrategy | 'ask'): Promise<CopyResult> => {
+    async (
+      skill: Skill,
+      target: SkillSource,
+      strategy: ConflictStrategy | 'ask',
+    ): Promise<CopyResult> => {
       const result = await window.api.copyTo(skill.id, target, strategy)
       if (result.ok) {
-        const label = result.outcome === 'skipped' ? '已跳过' : result.outcome === 'overwritten' ? '已覆盖' : '已创建'
+        const label =
+          result.outcome === 'skipped'
+            ? '已跳过'
+            : result.outcome === 'overwritten'
+              ? '已覆盖'
+              : '已创建'
         toast.success(`复制完成：${result.targetName}（${label}）`)
       } else if (result.code !== 'CONFLICT' || strategy !== 'ask') {
         toast.error(result.message)
       }
       return result
     },
-    []
+    [],
   )
 
   const doRefresh = useCallback(async (): Promise<void> => {
@@ -214,14 +242,15 @@ export default function App(): ReactElement {
       setDeleteTarget(null)
       await reload()
     },
-    [reload, selectedId]
+    [reload, selectedId],
   )
 
+  /** 设置页自动保存：成功静默，失败提示 */
   const saveSettings = useCallback(
     async (next: AppSettings): Promise<boolean> => {
       const result = await window.api.saveSettings(next)
       if (result.ok) {
-        toast.success('设置已保存')
+        setSettings(next)
         setInfo(await window.api.info())
         await reload()
         return true
@@ -229,25 +258,39 @@ export default function App(): ReactElement {
       toast.error(result.message)
       return false
     },
-    [reload]
+    [reload],
   )
+
+  /** 切换菜单：重置状态筛选 tab，避免带着上一个视图的筛选进入新视图 */
+  const changeView = useCallback((next: View) => {
+    setView(next)
+    setStatus('all')
+  }, [])
 
   const toggleCheck = useCallback((id: string) => {
     setCheckedIds((prev) => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }, [])
 
   const toggleAll = useCallback(() => {
-    setCheckedIds((prev) => (prev.size >= visible.length ? new Set() : new Set(visible.map((s) => s.id))))
+    setCheckedIds((prev) =>
+      prev.size >= visible.length ? new Set() : new Set(visible.map((s) => s.id)),
+    )
   }, [visible])
 
   const allChecked = visible.length > 0 && checkedIds.size >= visible.length
   const isDashboard = view.kind === 'dashboard'
   const isSettings = view.kind === 'settings'
   const showLocation = view.kind === 'workspace'
+  // 「内置」仅 Codex 视图可用（内置 skill 只来自 codex/.system）
+  const statusTabs = useMemo(
+    () => (isCodexView(view) ? STATUS_TABS : STATUS_TABS.filter((t) => t.key !== 'builtin')),
+    [view],
+  )
 
   useEffect(() => {
     if (isDashboard || isSettings) return
@@ -271,13 +314,18 @@ export default function App(): ReactElement {
         />
 
         <div className="flex min-h-0 flex-1">
-          <Sidebar view={view} onViewChange={setView} counts={counts} />
+          <Sidebar
+            view={view}
+            onViewChange={changeView}
+            menu={settings?.menu ?? DEFAULT_MENU_PREFS}
+            counts={counts}
+          />
 
           <main className="flex min-w-0 flex-1 flex-col">
             {isDashboard ? (
-              <Dashboard skills={skills} onJump={setView} />
+              <Dashboard skills={skills} onJump={changeView} />
             ) : isSettings ? (
-              <SettingsPage onSave={saveSettings} onBack={() => setView(lastViewRef.current)} />
+              <SettingsPage onSave={saveSettings} version={info?.version} />
             ) : (
               <>
                 <ViewHeader
@@ -333,7 +381,7 @@ export default function App(): ReactElement {
                   ) : (
                     <>
                       <div className="flex items-center gap-1">
-                        {STATUS_TABS.map((t) => (
+                        {statusTabs.map((t) => (
                           <Button
                             key={t.key}
                             size="sm"
@@ -345,7 +393,7 @@ export default function App(): ReactElement {
                           </Button>
                         ))}
                       </div>
-                      <span className="ml-auto font-mono text-[11.5px] tabular-nums text-muted-foreground/70">
+                      <span className="ml-auto font-mono text-[11.5px] text-muted-foreground/70 tabular-nums">
                         {loading ? '加载中…' : `${visible.length} 条结果`}
                       </span>
                     </>
@@ -376,8 +424,11 @@ export default function App(): ReactElement {
           </main>
 
           {!isDashboard && !isSettings && (
-            <section ref={detailRef} className="flex w-[336px] shrink-0 flex-col border-l border-sidebar-border bg-sidebar">
-              <SkillDetail skill={selected} />
+            <section
+              ref={detailRef}
+              className="flex w-[336px] shrink-0 flex-col border-l border-sidebar-border bg-sidebar"
+            >
+              <SkillDetail key={selected?.id ?? 'empty'} skill={selected} />
             </section>
           )}
         </div>

@@ -1,10 +1,11 @@
-import { type ReactElement } from 'react'
+import { SOURCE_LABEL, type Skill, type SkillSource } from '@shared/types'
 import { AlertTriangle, ChevronRight } from 'lucide-react'
+import { type ReactElement } from 'react'
+
 import { AgentIcon } from '@/components/agent-icons'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { AGENT_SOURCES, skillInView, type AgentId, type View } from '@/hooks/use-skills'
 import { formatBytes } from '@/lib/utils'
-import { AGENT_SOURCES, type AgentId, type View } from '@/hooks/use-skills'
-import { SOURCE_LABEL, type Skill, type SkillSource } from '@shared/types'
 
 const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
 const AGENTS: AgentId[] = ['claude', 'codex', 'opencode']
@@ -29,12 +30,14 @@ export function Dashboard({ skills, onJump }: DashboardProps): ReactElement {
       <div className="flex max-w-5xl flex-col gap-7 p-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-[13px] text-muted-foreground">三个存储位置的 skill 总览，点击下方条目进入对应视图。</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            三个存储位置的 skill 总览，点击下方条目进入对应视图。
+          </p>
         </div>
 
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-end gap-3">
-            <span className="text-[52px] font-semibold leading-none tracking-tight tabular-nums">
+            <span className="text-[52px] leading-none font-semibold tracking-tight tabular-nums">
               {skills.length}
             </span>
             <div className="pb-1 text-[13px] leading-tight text-muted-foreground">
@@ -44,13 +47,22 @@ export function Dashboard({ skills, onJump }: DashboardProps): ReactElement {
           </div>
           <div className="flex gap-5 pb-1.5 text-[12px] text-muted-foreground">
             <span>
-              <span className="font-mono text-[13px] font-medium text-foreground">{enabled.length}</span> 启用中
+              <span className="font-mono text-[13px] font-medium text-foreground">
+                {enabled.length}
+              </span>{' '}
+              启用中
             </span>
             <span>
-              <span className="font-mono text-[13px] font-medium text-foreground">{disabled.length}</span> 已停用
+              <span className="font-mono text-[13px] font-medium text-foreground">
+                {disabled.length}
+              </span>{' '}
+              已停用
             </span>
             <span>
-              <span className="font-mono text-[13px] font-medium text-foreground">{builtin.length}</span> 内置
+              <span className="font-mono text-[13px] font-medium text-foreground">
+                {builtin.length}
+              </span>{' '}
+              内置
             </span>
           </div>
         </div>
@@ -89,7 +101,9 @@ export function Dashboard({ skills, onJump }: DashboardProps): ReactElement {
                   >
                     <div className="flex items-center gap-3 px-1">
                       <AgentIcon agent={src} className="h-5 w-5" />
-                      <span className="flex-1 truncate text-[13px] font-medium">{SOURCE_LABEL[src]}</span>
+                      <span className="flex-1 truncate text-[13px] font-medium">
+                        {SOURCE_LABEL[src]}
+                      </span>
                       <span className="font-mono text-[15px] tabular-nums">{list.length}</span>
                       <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
                     </div>
@@ -98,11 +112,12 @@ export function Dashboard({ skills, onJump }: DashboardProps): ReactElement {
                         className="h-1.5"
                         style={{
                           width: `${(list.length / maxSource) * 100}%`,
-                          background: `var(--source-${src})`
+                          background: `var(--source-${src})`,
                         }}
                       />
                       <p className="mt-1.5 text-[11.5px] text-muted-foreground">
-                        {on} 启用，{off} 停用，{formatBytes(list.reduce((n, s) => n + s.byteSize, 0))}
+                        {on} 启用，{off} 停用，
+                        {formatBytes(list.reduce((n, s) => n + s.byteSize, 0))}
                       </p>
                     </div>
                   </button>
@@ -116,7 +131,7 @@ export function Dashboard({ skills, onJump }: DashboardProps): ReactElement {
             <div className="border-t border-border">
               {AGENTS.map((agent) => {
                 const srcs = AGENT_SOURCES[agent]
-                const list = skills.filter((s) => srcs.includes(s.source))
+                const list = skills.filter((s) => skillInView(s, { kind: 'workspace', agent }))
                 const uniq = new Set(list.map((s) => s.name)).size
                 return (
                   <button

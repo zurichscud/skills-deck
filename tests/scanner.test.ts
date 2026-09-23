@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { disabledSourceRootFor } from '../src/main/paths'
 import { scanAll } from '../src/main/scanner'
 
@@ -33,7 +34,9 @@ describe('scanAll（真实目录集成）', () => {
     const skills = await scanAll(disabledSourceRootFor)
     const builtins = skills.filter((s) => s.builtin)
     expect(builtins.length).toBeGreaterThan(0)
-    expect(builtins.every((s) => s.source === 'codex' && s.relDir.startsWith('.system/'))).toBe(true)
+    expect(builtins.every((s) => s.source === 'codex' && s.relDir.startsWith('.system/'))).toBe(
+      true,
+    )
     expect(builtins.every((s) => s.enabled === true)).toBe(true)
     expect(builtins.every((s) => s.files.some((f) => f.path === 'SKILL.md'))).toBe(true)
   })

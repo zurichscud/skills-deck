@@ -38,7 +38,9 @@ skill 文件在磁盘上的**物理存放目录**。默认三个，可在设置�
 | Codex | `codex` | 1:1 |
 | **opencode** | `claude` + `codex` + `opencode` | **三位置并集** |
 
-因此 opencode 工作区会看到 74 条（22+30+22），其中同名 skill 出现多行、每行标注「位置」。映射定义在 `src/renderer/src/hooks/use-skills.ts` 的 `AGENT_SOURCES`。
+因此 opencode 工作区会看到三位置的并集，其中同名 skill 出现多行、每行标注「位置」。映射定义在 `src/renderer/src/hooks/use-skills.ts` 的 `AGENT_SOURCES`。
+
+例外：codex 的 `.system` 内置 skill **只被 codex 自身读取**，opencode 无法使用它们，因此不出现在 opencode 工作区。
 
 ---
 
@@ -112,7 +114,7 @@ skill 文件在磁盘上的**物理存放目录**。默认三个，可在设置�
 
 ### 3.5 内置 skill（`codex/.system/`）
 
-Codex 自带的 6 个系统 skill。始终为启用态，**锁定**：不可停用、不可复制、不可删除，只读浏览。UI 上以「内置」区分，并单列筛选。
+Codex 自带的 6 个系统 skill。始终为启用态，**锁定**：不可停用、不可复制、不可删除，只读浏览。UI 上以「内置」区分；「内置」筛选仅在 **Codex 视图**（存储位置与工作区）提供。
 
 ---
 
@@ -170,13 +172,18 @@ Codex 自带的 6 个系统 skill。始终为启用态，**锁定**：不可停�
     "opencode": "/Users/you/.config/opencode/skills"
   },
   "disabledRoot": "/Users/you/Library/Application Support/skillsdeck/disabled",
-  "closeBehavior": "ask"
+  "closeBehavior": "ask",
+  "menu": {
+    "order": [],
+    "hidden": []
+  }
 }
 ```
 
 - `closeBehavior`：`ask`（每次询问）/ `tray`（最小化到菜单栏）/ `quit`（直接退出）
+- `menu`：侧边栏菜单的排序与显隐（在设置页拖拽排序、开关显隐）。`order` 为菜单项 id 数组（未列出的按默认顺序补齐），`hidden` 为隐藏项；非法 id 读取时自动过滤，缺省即默认顺序、全部显示
 - 应用数据目录（存 config 的位置）**固定**；`disabledRoot` 可改址
-- 也可通过设置界面修改，保存后立即重扫生效
+- 设置界面**修改即自动保存**（路径输入在失焦/回车时落盘），路径变化后立即重扫生效；菜单改动无需重启，侧边栏即时刷新
 
 **路径解析优先级**：环境变量 > `config.json` > 内置默认。环境变量便于测试隔离与可移植安装：
 
@@ -195,7 +202,7 @@ npm install
 npm run dev          # 开发模式（HMR）
 npm run build        # 构建到 out/
 npm run typecheck    # tsc --noEmit（node + web 两套配置）
-npm test             # 58 项单元 / 集成测试
+npm test             # 60 项单元 / 集成测试
 npm run dist         # 打包 DMG + zip → release/<version>/
 ```
 
@@ -233,7 +240,7 @@ src/
     │   ├── agent-icons.tsx      # 品牌图标（暗色反相）
     │   └── ui/                  # shadcn/ui
     └── features/skills/         # sidebar / view-header / skill-table
-                                 # skill-detail / dashboard / *-dialog
+                                 # skill-detail / dashboard / menu-editor / *-dialog
 resources/tray-icon.png          # 托盘图标
 ```
 

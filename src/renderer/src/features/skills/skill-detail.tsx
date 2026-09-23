@@ -1,28 +1,52 @@
-import { type ReactElement, useEffect, useMemo, useState } from 'react'
-import { ChevronRight, File, FileText, Folder, FolderOpen, Image, Link2, Terminal } from 'lucide-react'
+import { SOURCE_LABEL, type Skill, type SkillFile, type SkillFileKind } from '@shared/types'
+import {
+  ChevronRight,
+  File,
+  FileText,
+  Folder,
+  FolderOpen,
+  Image,
+  Link2,
+  Terminal,
+} from 'lucide-react'
+import { type ReactElement, useMemo, useState } from 'react'
+
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { cn, formatBytes, formatRelativeTime } from '@/lib/utils'
-import { SOURCE_LABEL, type Skill, type SkillFile, type SkillFileKind } from '@shared/types'
 
 function StatusBadge({ skill }: { skill: Skill }): ReactElement {
-  if (skill.builtin) return <Badge variant="outline" className="text-[11px]">内置</Badge>
-  if (skill.entryKind === 'broken') return <Badge variant="destructive" className="text-[11px]">失效</Badge>
+  if (skill.builtin)
+    return (
+      <Badge variant="outline" className="text-[11px]">
+        内置
+      </Badge>
+    )
+  if (skill.entryKind === 'broken')
+    return (
+      <Badge variant="destructive" className="text-[11px]">
+        失效
+      </Badge>
+    )
   if (skill.enabled)
     return (
       <Badge variant="outline" className="border-ok/40 text-[11px] text-ok">
         启用
       </Badge>
     )
-  return <Badge variant="secondary" className="text-[11px]">停用</Badge>
+  return (
+    <Badge variant="secondary" className="text-[11px]">
+      停用
+    </Badge>
+  )
 }
 
 const KIND_META: Record<SkillFileKind, { label: string; icon: typeof File }> = {
   md: { label: 'Markdown', icon: FileText },
   script: { label: '脚本', icon: Terminal },
   asset: { label: '资源', icon: Image },
-  other: { label: '其它', icon: File }
+  other: { label: '其它', icon: File },
 }
 
 function formatValue(v: unknown): string {
@@ -54,7 +78,9 @@ function buildFileTree(files: SkillFile[]): TreeNode[] {
         level.push({ type: 'file', path, name, file })
         break
       }
-      let dir = level.find((n): n is Extract<TreeNode, { type: 'dir' }> => n.type === 'dir' && n.name === name)
+      let dir = level.find(
+        (n): n is Extract<TreeNode, { type: 'dir' }> => n.type === 'dir' && n.name === name,
+      )
       if (!dir) {
         dir = { type: 'dir', path, name, children: [] }
         level.push(dir)
@@ -93,11 +119,16 @@ function FileTree({ nodes, depth, collapsed, onToggle }: FileTreeProps): ReactEl
               className="flex items-center justify-between gap-2 py-0.5 text-[11.5px]"
               style={{ paddingLeft: depth * 14 + 4 }}
             >
-              <span className="flex min-w-0 items-center gap-1.5 font-mono text-muted-foreground" title={node.path}>
+              <span
+                className="flex min-w-0 items-center gap-1.5 font-mono text-muted-foreground"
+                title={node.path}
+              >
                 <Icon className="h-3 w-3 shrink-0 text-muted-foreground/60" />
                 <span className="truncate">{node.name}</span>
               </span>
-              <span className="shrink-0 tabular-nums text-muted-foreground/60">{formatBytes(node.file.size)}</span>
+              <span className="shrink-0 text-muted-foreground/60 tabular-nums">
+                {formatBytes(node.file.size)}
+              </span>
             </div>
           )
         }
@@ -111,7 +142,9 @@ function FileTree({ nodes, depth, collapsed, onToggle }: FileTreeProps): ReactEl
               className="flex w-full items-center gap-1 py-0.5 text-left text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
               style={{ paddingLeft: depth * 14 }}
             >
-              <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', open && 'rotate-90')} />
+              <ChevronRight
+                className={cn('h-3 w-3 shrink-0 transition-transform', open && 'rotate-90')}
+              />
               {open ? (
                 <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground/60" />
               ) : (
@@ -119,7 +152,14 @@ function FileTree({ nodes, depth, collapsed, onToggle }: FileTreeProps): ReactEl
               )}
               <span className="truncate font-mono">{node.name}</span>
             </button>
-            {open && <FileTree nodes={node.children} depth={depth + 1} collapsed={collapsed} onToggle={onToggle} />}
+            {open && (
+              <FileTree
+                nodes={node.children}
+                depth={depth + 1}
+                collapsed={collapsed}
+                onToggle={onToggle}
+              />
+            )}
           </div>
         )
       })}
@@ -146,10 +186,6 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
 
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
 
-  useEffect(() => {
-    setCollapsed(new Set())
-  }, [skill?.id])
-
   const toggleDir = (path: string): void => {
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -163,7 +199,9 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <p className="text-sm font-medium text-muted-foreground">未选择 skill</p>
-        <p className="text-[13px] text-muted-foreground/70">在列表中选择一项，这里会显示路径、frontmatter 和文件。</p>
+        <p className="text-[13px] text-muted-foreground/70">
+          在列表中选择一项，这里会显示路径、frontmatter 和文件。
+        </p>
       </div>
     )
   }
@@ -175,7 +213,9 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
       <div className="flex flex-col gap-4 p-4">
         <div>
           <div className="flex items-start justify-between gap-2">
-            <h2 className="break-all font-mono text-[15px] font-semibold leading-snug">{skill.name}</h2>
+            <h2 className="font-mono text-[15px] leading-snug font-semibold break-all">
+              {skill.name}
+            </h2>
             <StatusBadge skill={skill} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -188,7 +228,7 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
                       ? 'var(--source-claude)'
                       : skill.source === 'codex'
                         ? 'var(--source-codex)'
-                        : 'var(--source-opencode)'
+                        : 'var(--source-opencode)',
                 }}
               />
               {SOURCE_LABEL[skill.source]}
@@ -210,7 +250,9 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
         {skill.entryKind === 'broken' && skill.linkTarget && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
             <p className="text-[12px] font-medium text-destructive">符号链接失效</p>
-            <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">→ {skill.linkTarget}</p>
+            <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground">
+              → {skill.linkTarget}
+            </p>
           </div>
         )}
 
@@ -219,7 +261,7 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
           <dl className="space-y-1.5 text-[11.5px]">
             <div>
               <dt className="text-muted-foreground/70">当前位置</dt>
-              <dd className="break-all font-mono text-muted-foreground">{skill.dirPath}</dd>
+              <dd className="font-mono break-all text-muted-foreground">{skill.dirPath}</dd>
             </div>
           </dl>
         </div>
@@ -240,7 +282,7 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
                   <dt className="truncate font-mono text-muted-foreground/70" title={k}>
                     {k}
                   </dt>
-                  <dd className="break-all font-mono text-foreground/90" title={formatValue(v)}>
+                  <dd className="font-mono break-all text-foreground/90" title={formatValue(v)}>
                     {formatValue(v)}
                   </dd>
                 </div>
@@ -275,7 +317,12 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
                       <span className="tabular-nums">({list.length})</span>
                     </p>
                     <div className="rounded-md border bg-muted/20 px-1.5 py-1">
-                      <FileTree nodes={buildFileTree(list)} depth={0} collapsed={collapsed} onToggle={toggleDir} />
+                      <FileTree
+                        nodes={buildFileTree(list)}
+                        depth={0}
+                        collapsed={collapsed}
+                        onToggle={toggleDir}
+                      />
                     </div>
                   </div>
                 )

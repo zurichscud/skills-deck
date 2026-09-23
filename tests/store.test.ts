@@ -1,14 +1,27 @@
-import { mkdtemp, mkdir, readFile, readdir, readlink, rm, stat, symlink, writeFile, lstat } from 'node:fs/promises'
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  readlink,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+  lstat,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
 import { SkillStore } from '../src/main/store'
 
 const ENV_KEYS = [
   'SKILLSDECK_MANAGED_ROOT',
   'SKILLSDECK_SOURCE_ROOT_CLAUDE',
   'SKILLSDECK_SOURCE_ROOT_CODEX',
-  'SKILLSDECK_SOURCE_ROOT_OPENCODE'
+  'SKILLSDECK_SOURCE_ROOT_OPENCODE',
 ] as const
 
 let root: string
@@ -17,7 +30,10 @@ const saved: Record<string, string | undefined> = {}
 
 async function makeSkill(dir: string, name: string, description = 'desc'): Promise<void> {
   await mkdir(dir, { recursive: true })
-  await writeFile(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`)
+  await writeFile(
+    join(dir, 'SKILL.md'),
+    `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`,
+  )
   await mkdir(join(dir, 'references'), { recursive: true })
   await writeFile(join(dir, 'references', 'a.md'), '# ref\n')
 }
@@ -92,7 +108,9 @@ describe('SkillStore.setEnabled', () => {
     expect(await store.setEnabled('opencode:same', false)).toEqual({ ok: true })
 
     expect(await exists(join(root, 'managed', 'disabled', 'claude', 'same', 'SKILL.md'))).toBe(true)
-    expect(await exists(join(root, 'managed', 'disabled', 'opencode', 'same', 'SKILL.md'))).toBe(true)
+    expect(await exists(join(root, 'managed', 'disabled', 'opencode', 'same', 'SKILL.md'))).toBe(
+      true,
+    )
   })
 
   it('目标已存在同名目录时中止并返回 CONFLICT，两侧均不被覆盖', async () => {
@@ -106,16 +124,20 @@ describe('SkillStore.setEnabled', () => {
       expect(r.conflictAt).toContain('alpha')
     }
     // 源侧未被破坏
-    expect(await readFile(join(root, 'claude', 'alpha', 'marker.txt'), 'utf8')).toBe('source-should-survive')
+    expect(await readFile(join(root, 'claude', 'alpha', 'marker.txt'), 'utf8')).toBe(
+      'source-should-survive',
+    )
     // 停车场侧未被覆盖
-    expect(await exists(join(root, 'managed', 'disabled', 'claude', 'alpha', 'SKILL.md'))).toBe(true)
+    expect(await exists(join(root, 'managed', 'disabled', 'claude', 'alpha', 'SKILL.md'))).toBe(
+      true,
+    )
   })
 
   it('内置 skill 拒绝停用', async () => {
     await mkdir(join(root, 'codex', '.system', 'imagegen'), { recursive: true })
     await writeFile(
       join(root, 'codex', '.system', 'imagegen', 'SKILL.md'),
-      '---\nname: imagegen\ndescription: d\n---\n'
+      '---\nname: imagegen\ndescription: d\n---\n',
     )
     await store.refresh()
 
@@ -198,7 +220,9 @@ describe('SkillStore.copyTo', () => {
     await makeSkill(join(root, 'codex', 'alpha'), 'existing')
     const r = await store.copyTo('claude:alpha', 'codex', 'skip')
     expect(r).toEqual({ ok: true, outcome: 'skipped', targetName: 'alpha' })
-    expect(await readFile(join(root, 'codex', 'alpha', 'SKILL.md'), 'utf8')).toContain('name: existing')
+    expect(await readFile(join(root, 'codex', 'alpha', 'SKILL.md'), 'utf8')).toContain(
+      'name: existing',
+    )
   })
 
   it('冲突策略 overwrite：目标被替换', async () => {

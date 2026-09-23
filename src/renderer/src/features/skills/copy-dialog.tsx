@@ -1,4 +1,12 @@
+import {
+  SOURCE_LABEL,
+  type ConflictStrategy,
+  type CopyResult,
+  type Skill,
+  type SkillSource,
+} from '@shared/types'
 import { type ReactElement, useState } from 'react'
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -7,7 +15,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle
+  AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,26 +24,34 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle
+  DialogTitle,
 } from '@/components/ui/dialog'
-import { SOURCE_LABEL, type ConflictStrategy, type CopyResult, type Skill, type SkillSource } from '@shared/types'
 
 const TARGETS: SkillSource[] = ['claude', 'codex', 'opencode']
 
 const DOT: Record<SkillSource, string> = {
   claude: 'var(--source-claude)',
   codex: 'var(--source-codex)',
-  opencode: 'var(--source-opencode)'
+  opencode: 'var(--source-opencode)',
 }
 
 export interface CopyDialogProps {
   skill: Skill | null
   onClose: () => void
-  onConfirm: (skill: Skill, target: SkillSource, strategy: ConflictStrategy | 'ask') => Promise<CopyResult>
+  onConfirm: (
+    skill: Skill,
+    target: SkillSource,
+    strategy: ConflictStrategy | 'ask',
+  ) => Promise<CopyResult>
   onDone: () => void
 }
 
-export function CopyDialog({ skill, onClose, onConfirm, onDone }: CopyDialogProps): ReactElement | null {
+export function CopyDialog({
+  skill,
+  onClose,
+  onConfirm,
+  onDone,
+}: CopyDialogProps): ReactElement | null {
   const [target, setTarget] = useState<SkillSource | null>(null)
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState<{ target: SkillSource; at: string } | null>(null)
@@ -79,7 +95,8 @@ export function CopyDialog({ skill, onClose, onConfirm, onDone }: CopyDialogProp
           <DialogHeader>
             <DialogTitle>复制到其他来源</DialogTitle>
             <DialogDescription>
-              将 <span className="font-mono">{skill.name}</span> 的完整内容（含附属资源）复制到目标来源。目标可独立修改，不影响原 skill。
+              将 <span className="font-mono">{skill.name}</span>{' '}
+              的完整内容（含附属资源）复制到目标来源。目标可独立修改，不影响原 skill。
             </DialogDescription>
           </DialogHeader>
 
@@ -126,7 +143,9 @@ export function CopyDialog({ skill, onClose, onConfirm, onDone }: CopyDialogProp
               <span className="font-mono">{SOURCE_LABEL[conflict?.target ?? 'claude']}</span> 中已有{' '}
               <span className="font-mono">{skill.name}</span>。请选择处理方式。
               {conflict?.at ? (
-                <span className="mt-2 block break-all font-mono text-[11px] text-muted-foreground">{conflict.at}</span>
+                <span className="mt-2 block font-mono text-[11px] break-all text-muted-foreground">
+                  {conflict.at}
+                </span>
               ) : null}
             </AlertDialogDescription>
           </AlertDialogHeader>

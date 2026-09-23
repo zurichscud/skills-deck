@@ -1,14 +1,21 @@
 import { promises as fs } from 'node:fs'
 import { join, relative, sep } from 'node:path'
+
+import type { Skill, SkillEntryKind, SkillFile, SkillSource } from '@shared/types'
+
 import { SKILL_ENTRY_FILE, classifyFile, parseSkillDoc } from './parse'
 import { makeSkillId, sourceRootFor } from './paths'
-import type { Skill, SkillEntryKind, SkillFile, SkillSource } from '@shared/types'
 
 const SKIP_DIRS = new Set(['node_modules', '.git'])
 const MAX_FILES = 400
 const MAX_DEPTH = 5
 
-async function walkFiles(root: string, dir: string, out: SkillFile[], depth: number): Promise<void> {
+async function walkFiles(
+  root: string,
+  dir: string,
+  out: SkillFile[],
+  depth: number,
+): Promise<void> {
   if (depth > MAX_DEPTH || out.length >= MAX_FILES) return
   let entries
   try {
@@ -36,7 +43,9 @@ async function walkFiles(root: string, dir: string, out: SkillFile[], depth: num
 }
 
 /** 判定目录项类型：跟随符号链接，区分真身/软链/断链 */
-async function entryKindOf(dirPath: string): Promise<{ kind: SkillEntryKind; linkTarget?: string }> {
+async function entryKindOf(
+  dirPath: string,
+): Promise<{ kind: SkillEntryKind; linkTarget?: string }> {
   let lst
   try {
     lst = await fs.lstat(dirPath)
@@ -58,7 +67,7 @@ async function loadSkill(
   relDir: string,
   dirPath: string,
   enabled: boolean,
-  builtin: boolean
+  builtin: boolean,
 ): Promise<Skill | null> {
   const fallbackName = relDir.split('/').pop() ?? relDir
   const { kind, linkTarget } = await entryKindOf(dirPath)
@@ -80,7 +89,7 @@ async function loadSkill(
       frontmatter: {},
       files: [],
       mtime: 0,
-      byteSize: 0
+      byteSize: 0,
     }
   }
 
@@ -119,7 +128,7 @@ async function loadSkill(
     frontmatter: doc.frontmatter,
     files,
     mtime: entryStat.mtimeMs,
-    byteSize: files.reduce((n, f) => n + f.size, 0)
+    byteSize: files.reduce((n, f) => n + f.size, 0),
   }
 }
 
@@ -141,7 +150,7 @@ async function scanSourceRoot(
   source: SkillSource,
   root: string,
   enabled: boolean,
-  includeSystem: boolean
+  includeSystem: boolean,
 ): Promise<Skill[]> {
   const out: Skill[] = []
   let entries

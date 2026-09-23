@@ -1,5 +1,7 @@
-import { type ReactElement } from 'react'
+import type { Skill } from '@shared/types'
 import { AlertTriangle } from 'lucide-react'
+import { type ReactElement } from 'react'
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -8,10 +10,9 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle
+  AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { formatBytes } from '@/lib/utils'
-import type { Skill } from '@shared/types'
 
 export interface DeleteDialogProps {
   skill: Skill | null
@@ -20,7 +21,12 @@ export interface DeleteDialogProps {
   onConfirm: (skill: Skill) => void
 }
 
-export function DeleteDialog({ skill, busy, onClose, onConfirm }: DeleteDialogProps): ReactElement | null {
+export function DeleteDialog({
+  skill,
+  busy,
+  onClose,
+  onConfirm,
+}: DeleteDialogProps): ReactElement | null {
   if (!skill) return null
 
   const isLink = skill.entryKind === 'symlink'
@@ -48,7 +54,9 @@ export function DeleteDialog({ skill, busy, onClose, onConfirm }: DeleteDialogPr
               {isLink && (
                 <p className="text-muted-foreground">
                   这是符号链接，<b>只会删除链接本身</b>。真身保留在：
-                  <span className="mt-1 block break-all font-mono text-[11px]">{skill.linkTarget ?? '（未知）'}</span>
+                  <span className="mt-1 block font-mono text-[11px] break-all">
+                    {skill.linkTarget ?? '（未知）'}
+                  </span>
                   其它来源中指向同一真身的链接不受影响。
                 </p>
               )}
@@ -57,7 +65,8 @@ export function DeleteDialog({ skill, busy, onClose, onConfirm }: DeleteDialogPr
               )}
               {!isLink && !isBroken && (
                 <p className="text-muted-foreground">
-                  这是真实目录，其中 <b>{skill.files.length}</b> 个文件（共 {formatBytes(skill.byteSize)}）将被一并永久删除。
+                  这是真实目录，其中 <b>{skill.files.length}</b> 个文件（共{' '}
+                  {formatBytes(skill.byteSize)}）将被一并永久删除。
                 </p>
               )}
             </div>

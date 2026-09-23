@@ -1,13 +1,14 @@
+import type { SkillSource } from '@shared/types'
+
 import claudeCodeIcon from '@/assets/icons/claude_code.svg'
 import codexIcon from '@/assets/icons/codex.svg'
 import opencodeIcon from '@/assets/icons/opencode.svg'
 import { cn } from '@/lib/utils'
-import type { SkillSource } from '@shared/types'
 
 const SRC: Record<SkillSource, string> = {
   claude: claudeCodeIcon,
   codex: codexIcon,
-  opencode: opencodeIcon
+  opencode: opencodeIcon,
 }
 
 /**
@@ -17,7 +18,7 @@ const SRC: Record<SkillSource, string> = {
 const DARK_INVERT: Record<SkillSource, string> = {
   claude: '',
   codex: 'dark:invert',
-  opencode: 'dark:invert'
+  opencode: 'dark:invert',
 }
 
 export interface AgentIconProps {

@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "semi": false,
+  "singleQuote": true,
+  "sortImports": true,
+  "sortPackageJson": false,
+  "sortTailwindcss": {
+    "stylesheet": "src/renderer/src/assets/main.css",
+    "functions": ["cn", "clsx", "cva"]
+  },
+  "ignorePatterns": ["public", "resources", "build", "release", "out", "dist", "coverage", "*.md"]
+}

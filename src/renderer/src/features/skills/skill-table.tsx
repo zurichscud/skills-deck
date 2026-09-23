@@ -1,5 +1,7 @@
-import { type ReactElement } from 'react'
+import { SOURCE_LABEL, type Skill } from '@shared/types'
 import { Loader2, MoreHorizontal } from 'lucide-react'
+import { type ReactElement } from 'react'
+
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -7,12 +9,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { SOURCE_LABEL, type Skill } from '@shared/types'
 
 function stateHint(skill: Skill): string {
   if (skill.builtin) return '内置 skill，不可停用'
@@ -55,7 +56,7 @@ export function SkillTable({
   onSetEnabled,
   onCopyTo,
   onReveal,
-  onDelete
+  onDelete,
 }: SkillTableProps): ReactElement {
   if (loading) {
     return (
@@ -78,7 +79,9 @@ export function SkillTable({
         ) : (
           <>
             <p className="text-sm font-medium">这里还没有 skill</p>
-            <p className="text-[13px] text-muted-foreground">检查设置中的仓库地址，或点击右上角刷新重新扫描。</p>
+            <p className="text-[13px] text-muted-foreground">
+              检查设置中的仓库地址，或点击右上角刷新重新扫描。
+            </p>
           </>
         )}
       </div>
@@ -97,7 +100,9 @@ export function SkillTable({
             <th className="px-2 py-2">描述</th>
             {showLocation && <th className="w-[88px] px-2 py-2">位置</th>}
             <th className="w-[56px] px-2 py-2">状态</th>
-            <th className="w-10 px-1 py-2" />
+            <th className="w-10 px-1 py-2">
+              <span className="sr-only">操作</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -111,7 +116,7 @@ export function SkillTable({
                 onClick={() => onSelect(skill)}
                 className={cn(
                   'cursor-pointer border-b border-border/60 transition-colors hover:bg-accent/50',
-                  selected && 'bg-accent/60'
+                  selected && 'bg-accent/60',
                 )}
                 style={selected ? { boxShadow: 'inset 2px 0 0 var(--primary)' } : undefined}
               >
@@ -124,7 +129,9 @@ export function SkillTable({
                 </td>
                 <td className="px-2 py-2">
                   <div className="flex items-center gap-1.5">
-                    {pending && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />}
+                    {pending && (
+                      <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+                    )}
                     <span className="truncate font-mono text-[12.5px]" title={skill.name}>
                       {skill.name}
                     </span>
@@ -137,7 +144,10 @@ export function SkillTable({
                 </td>
                 {showLocation && (
                   <td className="px-2 py-2">
-                    <span className="block truncate text-[11.5px] text-muted-foreground" title={skill.dirPath}>
+                    <span
+                      className="block truncate text-[11.5px] text-muted-foreground"
+                      title={skill.dirPath}
+                    >
                       {SOURCE_LABEL[skill.source]}
                     </span>
                   </td>
@@ -152,25 +162,34 @@ export function SkillTable({
                     />
                   </div>
                 </td>
-                <td className="px-1 py-2" onClick={(e) => e.stopPropagation()}>
+                <td className="px-1 py-2">
+                  <span className="sr-only">操作</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="更多操作">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        aria-label="更多操作"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <MoreHorizontal className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="text-[13px]">
                       <DropdownMenuItem disabled={skill.builtin} onSelect={() => onCopyTo(skill)}>
-                        复制到其他来源…
+                        复制到其他源
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => onReveal(skill)}>打开所在文件夹</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => onReveal(skill)}>
+                        打开所在文件夹
+                      </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         disabled={skill.builtin}
                         variant="destructive"
                         onSelect={() => onDelete(skill)}
                       >
-                        永久删除…
+                        删除
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

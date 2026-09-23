@@ -1,13 +1,12 @@
-import { type ReactElement, type ReactNode } from 'react'
+import { type MenuItemId, type MenuPrefs, type SkillSource } from '@shared/types'
 import { LayoutDashboard, Moon, Settings, Sun } from 'lucide-react'
+import { type ReactElement, type ReactNode } from 'react'
+
 import { AgentIcon } from '@/components/agent-icons'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { SOURCE_LABEL, type SkillSource } from '@shared/types'
 import type { AgentId, View } from '@/hooks/use-skills'
-
-const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
-const AGENTS: AgentId[] = ['claude', 'codex', 'opencode']
+import { MENU_GROUP_LABEL, MENU_GROUP_ORDER, resolveMenu } from '@/lib/menu'
+import { cn } from '@/lib/utils'
 
 export interface TitleBarProps {
   theme: 'light' | 'dark'
@@ -17,9 +16,7 @@ export interface TitleBarProps {
 
 export function TitleBar({ theme, onThemeToggle, actions }: TitleBarProps): ReactElement {
   return (
-    <header className="drag-region flex h-11 shrink-0 items-center gap-3 border-b border-sidebar-border bg-sidebar pl-[86px] pr-3">
-      <span className="shrink-0 text-[13px] font-semibold tracking-tight">Skills Deck</span>
-
+    <header className="drag-region flex h-11 shrink-0 items-center border-b border-sidebar-border bg-sidebar pr-3 pl-[86px]">
       <div className="no-drag ml-auto flex shrink-0 items-center gap-1">
         {actions}
         <Button
@@ -41,7 +38,7 @@ function NavItem({
   label,
   count,
   icon,
-  onClick
+  onClick,
 }: {
   active: boolean
   label: string
@@ -57,13 +54,13 @@ function NavItem({
         'flex w-full items-center gap-2 border-l-2 px-2 py-1.5 text-left text-[13px] transition-colors',
         active
           ? 'border-primary bg-sidebar-accent font-medium text-foreground'
-          : 'border-transparent text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'
+          : 'border-transparent text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
       )}
     >
       <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       {count !== undefined && (
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">{count}</span>
+        <span className="font-mono text-[11px] text-muted-foreground/70 tabular-nums">{count}</span>
       )}
     </button>
   )
@@ -72,7 +69,7 @@ function NavItem({
 function NavSection({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
     <div>
-      <p className="px-2 pb-1.5 pt-1 text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className="px-2 pt-1 pb-1.5 text-[11px] font-medium text-muted-foreground">{label}</p>
       {children}
     </div>
   )
@@ -81,6 +78,7 @@ function NavSection({ label, children }: { label: string; children: ReactNode })
 export interface SidebarProps {
   view: View
   onViewChange: (v: View) => void
+  menu: MenuPrefs
   counts: {
     all: number
     bySource: Record<SkillSource, number>
@@ -91,44 +89,61 @@ export interface SidebarProps {
   }
 }
 
-export function Sidebar({ view, onViewChange, counts }: SidebarProps): ReactElement {
+function isViewActive(current: View, target: View): boolean {
+  if (current.kind !== target.kind) return false
+  if (current.kind === 'location' && target.kind === 'location')
+    return current.source === target.source
+  if (current.kind === 'workspace' && target.kind === 'workspace')
+    return current.agent === target.agent
+  return true
+}
+
+function countFor(id: MenuItemId, counts: SidebarProps['counts']): number {
+  if (id === 'dashboard') return counts.all
+  const [kind, source] = id.split(':') as ['location' | 'workspace', SkillSource]
+  return kind === 'location' ? counts.bySource[source] : counts.byAgent[source]
+}
+
+export function Sidebar({ view, onViewChange, menu, counts }: SidebarProps): ReactElement {
+  const items = resolveMenu(menu)
+
   return (
     <aside className="flex w-[212px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-sidebar-border bg-sidebar px-2 py-3">
-      <NavSection label="总览">
-        <NavItem
-          active={view.kind === 'dashboard'}
-          label="Dashboard"
-          count={counts.all}
-          icon={<LayoutDashboard className="h-3.5 w-3.5" />}
-          onClick={() => onViewChange({ kind: 'dashboard' })}
+      <div className="flex items-center gap-2 px-2">
+        <img
+          src="./icon.png"
+          alt=""
+          aria-hidden
+          draggable={false}
+          className="h-5 w-5 shrink-0 rounded-[6px]"
         />
-      </NavSection>
+        <span className="truncate text-[14px] font-semibold tracking-tight">Skills Deck</span>
+      </div>
 
-      <NavSection label="存储位置">
-        {SOURCES.map((s) => (
-          <NavItem
-            key={s}
-            active={view.kind === 'location' && view.source === s}
-            label={SOURCE_LABEL[s]}
-            count={counts.bySource[s]}
-            icon={<AgentIcon agent={s} className="h-3.5 w-3.5" />}
-            onClick={() => onViewChange({ kind: 'location', source: s })}
-          />
-        ))}
-      </NavSection>
-
-      <NavSection label="工作区">
-        {AGENTS.map((a) => (
-          <NavItem
-            key={a}
-            active={view.kind === 'workspace' && view.agent === a}
-            label={SOURCE_LABEL[a]}
-            count={counts.byAgent[a]}
-            icon={<AgentIcon agent={a} className="h-3.5 w-3.5" />}
-            onClick={() => onViewChange({ kind: 'workspace', agent: a })}
-          />
-        ))}
-      </NavSection>
+      {MENU_GROUP_ORDER.map((group) => {
+        const list = items.filter((item) => item.group === group)
+        if (list.length === 0) return null
+        return (
+          <NavSection key={group} label={MENU_GROUP_LABEL[group]}>
+            {list.map((item) => (
+              <NavItem
+                key={item.id}
+                active={isViewActive(view, item.view)}
+                label={item.label}
+                count={countFor(item.id, counts)}
+                icon={
+                  item.source ? (
+                    <AgentIcon agent={item.source} className="h-3.5 w-3.5" />
+                  ) : (
+                    <LayoutDashboard className="h-3.5 w-3.5" />
+                  )
+                }
+                onClick={() => onViewChange(item.view)}
+              />
+            ))}
+          </NavSection>
+        )
+      })}
 
       <div className="mt-auto px-0 pt-2">
         <NavItem

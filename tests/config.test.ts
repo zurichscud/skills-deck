@@ -1,9 +1,11 @@
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
 import { currentSettings, loadSettings, saveSettings } from '../src/main/config'
-import { applyPathOverrides, disabledRoot, managedRoot, sourceRootFor } from '../src/main/paths'
+import { applyPathOverrides, disabledRoot, sourceRootFor } from '../src/main/paths'
 import type { AppSettings } from '../src/shared/types'
 
 const ENV_KEYS = [
@@ -11,7 +13,7 @@ const ENV_KEYS = [
   'SKILLSDECK_DISABLED_ROOT',
   'SKILLSDECK_SOURCE_ROOT_CLAUDE',
   'SKILLSDECK_SOURCE_ROOT_CODEX',
-  'SKILLSDECK_SOURCE_ROOT_OPENCODE'
+  'SKILLSDECK_SOURCE_ROOT_OPENCODE',
 ] as const
 
 let root: string
@@ -41,10 +43,11 @@ function sample(): AppSettings {
     sourceRoots: {
       claude: join(root, 'c'),
       codex: join(root, 'x'),
-      opencode: join(root, 'o')
+      opencode: join(root, 'o'),
     },
     disabledRoot: join(root, 'parking'),
-    closeBehavior: 'tray'
+    closeBehavior: 'tray',
+    menu: { order: [], hidden: [] },
   }
 }
 
@@ -92,5 +95,29 @@ describe('config', () => {
     process.env['SKILLSDECK_SOURCE_ROOT_CLAUDE'] = join(root, 'from-env')
     await loadSettings()
     expect(sourceRootFor('claude')).toBe(join(root, 'from-env'))
+  })
+
+  it('菜单显隐与排序持久化，非法 id 被过滤', async () => {
+    await saveSettings({
+      ...sample(),
+      menu: {
+        order: ['workspace:opencode', 'dashboard'],
+        hidden: ['location:codex', 'bogus'] as AppSettings['menu']['hidden'],
+      },
+    })
+    const s = await loadSettings()
+    expect(s.menu.order).toEqual(['workspace:opencode', 'dashboard'])
+    expect(s.menu.hidden).toEqual(['location:codex'])
+  })
+
+  it('缺失或损坏的 menu 回退默认', async () => {
+    await mkdir(join(root, 'managed'), { recursive: true })
+    await writeFile(
+      join(root, 'managed', 'config.json'),
+      JSON.stringify({ menu: { order: 'nope', hidden: [1, 'dashboard', 'dashboard'] } }),
+    )
+    const s = await loadSettings()
+    expect(s.menu.order).toEqual([])
+    expect(s.menu.hidden).toEqual(['dashboard'])
   })
 })
