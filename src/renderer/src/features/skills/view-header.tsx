@@ -1,5 +1,5 @@
 import { SOURCE_LABEL, type AppInfo, type Skill, type SkillSource } from '@shared/types'
-import { Plus, RefreshCw, Search } from 'lucide-react'
+import { FolderOpen, Plus, RefreshCw, Search } from 'lucide-react'
 import { type ReactElement, type RefObject } from 'react'
 
 import { AgentIcon } from '@/components/agent-icons'
@@ -18,6 +18,8 @@ export interface ViewHeaderProps {
   refreshing: boolean
   onRefresh: () => void
   onAdd: () => void
+  /** 仅存储位置视图：在系统文件管理器中打开该目录 */
+  onOpenLocation?: () => void
 }
 
 function titleOf(view: Exclude<View, { kind: 'dashboard' | 'settings' }>): {
@@ -41,6 +43,7 @@ export function ViewHeader({
   refreshing,
   onRefresh,
   onAdd,
+  onOpenLocation,
 }: ViewHeaderProps): ReactElement {
   const { agent, title } = titleOf(view)
 
@@ -93,6 +96,19 @@ export function ViewHeader({
         >
           <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
         </Button>
+
+        {view.kind === 'location' && onOpenLocation && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5 px-3 text-[13px]"
+            onClick={onOpenLocation}
+            title={pathLine}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            打开存储位置
+          </Button>
+        )}
 
         <Button size="sm" className="h-9 gap-1.5 px-3.5 text-[13px]" onClick={onAdd}>
           <Plus className="h-3.5 w-3.5" />

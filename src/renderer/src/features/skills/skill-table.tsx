@@ -93,8 +93,13 @@ export function SkillTable({
       <table className="w-full min-w-[620px] table-fixed border-collapse text-[13px]">
         <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b text-left text-[11px] font-medium text-muted-foreground">
-            <th className="w-8 px-2 py-2">
-              <Checkbox checked={allChecked} onCheckedChange={onToggleAll} aria-label="全选" />
+            <th className="w-8 cursor-pointer px-2 py-2" onClick={onToggleAll}>
+              <Checkbox
+                checked={allChecked}
+                onCheckedChange={onToggleAll}
+                onClick={(e) => e.stopPropagation()}
+                aria-label="全选"
+              />
             </th>
             <th className="w-[180px] px-2 py-2">名称</th>
             <th className="px-2 py-2">描述</th>
@@ -120,10 +125,17 @@ export function SkillTable({
                 )}
                 style={selected ? { boxShadow: 'inset 2px 0 0 var(--primary)' } : undefined}
               >
-                <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                <td
+                  className="cursor-pointer px-2 py-2"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleCheck(skill.id)
+                  }}
+                >
                   <Checkbox
                     checked={checkedIds.has(skill.id)}
                     onCheckedChange={() => onToggleCheck(skill.id)}
+                    onClick={(e) => e.stopPropagation()}
                     aria-label={`选择 ${skill.name}`}
                   />
                 </td>

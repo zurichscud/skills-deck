@@ -200,6 +200,12 @@ export default function App(): ReactElement {
     }
   }, [])
 
+  /** 在文件管理器中打开存储位置根目录 */
+  const openLocation = useCallback(async (source: SkillSource): Promise<void> => {
+    const result = await window.api.openSourceRoot(source)
+    if (!result.ok) toast.error(result.message)
+  }, [])
+
   const confirmCopy = useCallback(
     async (
       skill: Skill,
@@ -350,6 +356,9 @@ export default function App(): ReactElement {
                   refreshing={refreshing}
                   onRefresh={() => void doRefresh()}
                   onAdd={() => toast.info('功能暂未开发')}
+                  onOpenLocation={
+                    view.kind === 'location' ? () => void openLocation(view.source) : undefined
+                  }
                 />
 
                 {/* 固定高度工具条：始终占位，避免操作按钮出现/消失引起表格抖动 */}

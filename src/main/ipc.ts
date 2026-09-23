@@ -68,6 +68,15 @@ export function registerIpc(): void {
     skillStore.revealInFinder(skillId),
   )
 
+  ipcMain.handle(
+    'skills:openSourceRoot',
+    async (_e, source: SkillSource): Promise<SetEnabledResult> => {
+      const err = await shell.openPath(sourceRootFor(source))
+      if (err) return { ok: false, code: 'IO', message: err }
+      return { ok: true }
+    },
+  )
+
   ipcMain.handle('skills:delete', async (_e, skillId: string): Promise<SetEnabledResult> => {
     const result = await skillStore.deleteSkill(skillId)
     if (result.ok) broadcastSkillsChanged()

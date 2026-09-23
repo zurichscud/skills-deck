@@ -29,6 +29,8 @@ const api: SkillApi = {
     ipcRenderer.invoke('skills:delete', skillId),
   revealInFinder: (skillId: string): Promise<void> =>
     ipcRenderer.invoke('skills:revealInFinder', skillId),
+  openSourceRoot: (source: SkillSource): Promise<SetEnabledResult> =>
+    ipcRenderer.invoke('skills:openSourceRoot', source),
   onChanged: (listener: () => void): (() => void) => {
     const handler = (): void => listener()
     ipcRenderer.on('skills:changed', handler)

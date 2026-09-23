@@ -113,6 +113,7 @@ export interface SkillApi {
   copyTo(skillId: string, target: SkillSource, strategy: CopyStrategy): Promise<CopyResult>
   deleteSkill(skillId: string): Promise<SetEnabledResult>
   revealInFinder(skillId: string): Promise<void>
+  openSourceRoot(source: SkillSource): Promise<SetEnabledResult>
   onChanged(listener: () => void): () => void
   getSettings(): Promise<AppSettings>
   saveSettings(next: AppSettings): Promise<SetEnabledResult>
