@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { linkStateOf, linkTargetsFor, switchSourceFor, type ListView } from '@/hooks/use-skills'
+import { linkStateOf, linkTargetsFor, localSourceInView, switchSourceFor, type ListView } from '@/hooks/use-skills'
 import { cn } from '@/lib/utils'
 
 const LINK_HINT: Record<LinkState, string> = {
@@ -25,7 +25,7 @@ const LINK_HINT: Record<LinkState, string> = {
   native: 'Codex 内置，天然可用',
 }
 
-/** 单一启用位置：开/关软链；未纳管与内置一律禁用 */
+/** 单一启用位置：开/关软链；本地条目与内置天然可用，未纳管的其他情况禁用 */
 function EnableSwitch({
   skill,
   source,
@@ -38,12 +38,14 @@ function EnableSwitch({
   onToggle: (skill: Skill, source: SkillSource, next: boolean) => void
 }): ReactElement {
   const state = linkStateOf(skill, source)
-  const checked = state === 'linked' || state === 'native'
+  const local = skill.kind === 'external' && skill.origin === source
+  const checked = local || state === 'linked' || state === 'native'
   const disabled =
-    pending || skill.kind === 'external' || skill.kind === 'builtin' || state === 'conflict'
+    pending || local || skill.kind === 'external' || skill.kind === 'builtin' || state === 'conflict'
 
-  const hint =
-    skill.kind === 'external'
+  const hint = local
+    ? '本地条目：内容就在这个位置，agent 天然可用（尚未纳入中央仓库）'
+    : skill.kind === 'external'
       ? '未纳管条目，无法在此启用'
       : skill.kind === 'builtin'
         ? 'Codex 内置，天然可用'
@@ -66,10 +68,10 @@ function EnableSwitch({
   )
 }
 
-function typeLabel(skill: Skill): string {
+function typeLabel(skill: Skill, view: ListView): string {
   if (skill.kind === 'central') return '中央仓库'
   if (skill.kind === 'builtin') return 'Codex 内置'
-  return '未纳管'
+  return localSourceInView(skill, view) ? '本地' : '未纳管'
 }
 
 function LinkToggle({
@@ -84,12 +86,13 @@ function LinkToggle({
   onToggle: (skill: Skill, source: SkillSource, next: boolean) => void
 }): ReactElement {
   const state = linkStateOf(skill, source)
-  const linked = state === 'linked' || state === 'native'
-  const disabled = pending || state === 'native' || state === 'conflict'
+  const local = skill.kind === 'external' && skill.origin === source
+  const linked = local || state === 'linked' || state === 'native'
+  const disabled = pending || local || state === 'native' || state === 'conflict'
 
   const tint = `var(--source-${source})`
   const style =
-    state === 'conflict'
+    state === 'conflict' && !local
       ? undefined
       : linked
         ? {
@@ -104,11 +107,15 @@ function LinkToggle({
             }
           : undefined
 
+  const hint = local
+    ? '本地条目：内容就在这个位置，agent 天然可用（尚未纳入中央仓库）'
+    : LINK_HINT[state]
+
   return (
     <button
       type="button"
       disabled={disabled}
-      title={`${SOURCE_LABEL[source]}：${LINK_HINT[state]}`}
+      title={`${SOURCE_LABEL[source]}：${hint}`}
       aria-label={`${SOURCE_LABEL[source]} ${linked ? '取消链接' : '链接'} ${skill.name}`}
       onClick={(e) => {
         e.stopPropagation()
@@ -118,7 +125,7 @@ function LinkToggle({
       className={cn(
         'flex h-6 w-6 items-center justify-center rounded-[5px] border transition-colors',
         !linked && state !== 'conflict' && state !== 'broken' && 'border-dashed border-border/70',
-        state === 'conflict' && 'border-warn/50 text-warn',
+        state === 'conflict' && !local && 'border-warn/50 text-warn',
         disabled ? 'cursor-default opacity-70' : 'hover:border-foreground/30',
         !disabled && linked && 'hover:opacity-80',
       )}
@@ -276,15 +283,19 @@ export function SkillTable({
                     <span
                       className={cn(
                         'block truncate text-[11.5px]',
-                        skill.kind === 'external'
+                        skill.kind === 'external' && localSourceInView(skill, view) === null
                           ? 'text-warn'
                           : skill.kind === 'builtin'
                             ? 'text-muted-foreground/70'
                             : 'text-muted-foreground',
                       )}
-                      title={skill.dirPath}
+                      title={
+                        skill.kind === 'external' && localSourceInView(skill, view) !== null
+                          ? `本地条目：${skill.dirPath}（尚未纳入中央仓库）`
+                          : skill.dirPath
+                      }
                     >
-                      {typeLabel(skill)}
+                      {typeLabel(skill, view)}
                     </span>
                   </td>
                 )}

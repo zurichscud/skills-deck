@@ -16,6 +16,7 @@ import {
   isActive,
   linkedCount,
   skillInView,
+  symlinkCount,
   type AgentId,
   type View,
 } from '@/hooks/use-skills'
@@ -200,7 +201,7 @@ export function Dashboard({ skills, onJump, onImport, unmanaged }: DashboardProp
               <h2 className="pt-5 pb-1 text-[13px] font-medium text-muted-foreground">存储位置</h2>
               {SOURCES.map((src) => {
                 const here = skills.filter((s) => skillInView(s, { kind: 'location', source: src }))
-                const hereLinked = linkedCount(skills, { kind: 'location', source: src })
+                const hereLinked = symlinkCount(skills, { kind: 'location', source: src })
                 const foreign = here.filter((s) => s.kind === 'external').length
                 const native = here.filter((s) => s.kind === 'builtin').length
                 return (

@@ -88,11 +88,26 @@ export function skillInView(skill: Skill, view: View): boolean {
 /** 在指定视图下「已启用」的判定 */
 export function isLinkedInView(skill: Skill, view: View): boolean {
   if (skill.kind === 'builtin') return true
+  // 本地条目（未纳管）就放在 agent 读取的目录里，agent 直接读取，天然可用
+  if (skill.kind === 'external') return localSourceInView(skill, view) !== null
   if (view.kind === 'location') return availableAt(skill, view.source)
   if (view.kind === 'workspace') {
     return AGENT_SOURCES[view.agent].some((s) => availableAt(skill, s))
   }
   return isActive(skill)
+}
+
+/**
+ * 该未纳管条目是否「本地」于这个视图：内容就放在该 agent 读取的位置里。
+ * 返回它所在的位置，不属于这个视图时返回 null。
+ */
+export function localSourceInView(skill: Skill, view: View): SkillSource | null {
+  if (skill.kind !== 'external' || skill.origin === null) return null
+  if (view.kind === 'location') return view.source === skill.origin ? skill.origin : null
+  if (view.kind === 'workspace') {
+    return AGENT_SOURCES[view.agent].includes(skill.origin) ? skill.origin : null
+  }
+  return null
 }
 
 /**
@@ -113,9 +128,15 @@ export function linkedCount(skills: Skill[], view: ListView): number {
   return skills.filter((s) => s.kind !== 'builtin' && isLinkedInView(s, view)).length
 }
 
+/** 视图下真正的软链条数（中央仓库真身在别处的链接，不含本地条目与内置） */
+export function symlinkCount(skills: Skill[], view: ListView): number {
+  return skills.filter((s) => s.kind === 'central' && isLinkedInView(s, view)).length
+}
+
 /** 该视图中需要展示开关的存储位置 */
 export function linkTargetsFor(skill: Skill, view: View): SkillSource[] {
-  if (skill.kind === 'external') return []
+  // 本地条目只存在于自己所在的位置
+  if (skill.kind === 'external') return skill.origin ? [skill.origin] : []
   if (skill.kind === 'builtin') return ['codex']
   if (view.kind === 'location') return [view.source]
   if (view.kind === 'workspace') return AGENT_SOURCES[view.agent]
