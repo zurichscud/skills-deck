@@ -1,181 +1,294 @@
-import { type ReactElement } from 'react'
-import { AlertTriangle, Boxes, HardDrive, LayoutDashboard } from 'lucide-react'
-import { AgentIcon } from '@/components/agent-icons'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { AGENT_SOURCES, type AgentId, type View } from '@/hooks/use-skills'
-import { formatBytes } from '@/lib/utils'
 import { SOURCE_LABEL, type Skill, type SkillSource } from '@shared/types'
+import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Package, Sparkles } from 'lucide-react'
+import { type ReactElement } from 'react'
+
+import { AgentIcon } from '@/components/agent-icons'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  AGENT_SOURCES,
+  isActive,
+  linkedCount,
+  skillInView,
+  symlinkCount,
+  type AgentId,
+  type View,
+} from '@/hooks/use-skills'
+import { formatBytes } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+
+import { ImportMenu, type ImportMode } from './import-menu'
 
 const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
 const AGENTS: AgentId[] = ['claude', 'codex', 'opencode']
 
-function Stat({
-  label,
-  value,
-  hint,
-  tone = 'default'
-}: {
-  label: string
-  value: number
-  hint?: string
-  tone?: 'default' | 'ok' | 'muted' | 'warn'
-}): ReactElement {
-  const toneClass =
-    tone === 'ok'
-      ? 'text-emerald-500'
-      : tone === 'muted'
-        ? 'text-muted-foreground'
-        : tone === 'warn'
-          ? 'text-amber-500'
-          : 'text-foreground'
-  return (
-    <Card>
-      <CardHeader className="pb-1">
-        <CardTitle className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-          {label}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className={`text-2xl font-semibold tabular-nums ${toneClass}`}>{value}</p>
-        {hint ? <p className="mt-0.5 text-[11px] text-muted-foreground/60">{hint}</p> : null}
-      </CardContent>
-    </Card>
-  )
-}
+const FOCUS_RING =
+  'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 export interface DashboardProps {
   skills: Skill[]
   onJump: (view: View) => void
+  /** 导入入口：只写入中央仓库 */
+  onImport: (mode: ImportMode) => void
+  unmanaged: {
+    total: number
+    conflicts: number
+    busy: boolean
+    onOpen: () => void
+    onAdoptAll: () => void
+  } | null
 }
 
-export function Dashboard({ skills, onJump }: DashboardProps): ReactElement {
-  const enabled = skills.filter((s) => s.enabled && !s.builtin)
-  const disabled = skills.filter((s) => !s.enabled && !s.builtin)
-  const builtin = skills.filter((s) => s.builtin)
-  const broken = skills.filter((s) => s.entryKind === 'broken')
-  const totalBytes = skills.reduce((n, s) => n + s.byteSize, 0)
-
-  const bySource = (src: SkillSource): Skill[] => skills.filter((s) => s.source === src)
+export function Dashboard({ skills, onJump, onImport, unmanaged }: DashboardProps): ReactElement {
+  const central = skills.filter((s) => s.kind === 'central')
+  const builtin = skills.filter((s) => s.kind === 'builtin')
+  const external = skills.filter((s) => s.kind === 'external')
+  const linked = central.filter(isActive)
+  const unlinked = central.filter((s) => !isActive(s))
+  const brokenLinks = central.filter((s) => SOURCES.some((src) => s.links[src].state === 'broken'))
+  const occupied = central.filter((s) => SOURCES.some((src) => s.links[src].state === 'conflict'))
+  const totalBytes = central.reduce((n, s) => n + s.byteSize, 0)
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col gap-4 p-4">
-        <div>
-          <h2 className="flex items-center gap-2 text-[15px] font-semibold">
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </h2>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">
-            三个存储位置共 {skills.length} 个 skill，合计 {formatBytes(totalBytes)}。
-          </p>
+      <div className="flex max-w-5xl flex-col gap-7 p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">总览</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              中央仓库是唯一真身，各 agent 目录只放指向它的软链。
+            </p>
+          </div>
+          <ImportMenu onImport={onImport} />
         </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Stat label="Skill 总数" value={skills.length} hint="跨全部存储位置" />
-          <Stat label="启用中" value={enabled.length} tone="ok" hint="对来源工具可见" />
-          <Stat label="已停用" value={disabled.length} tone="muted" hint="存放在停用停车场" />
-          <Stat label="内置" value={builtin.length} hint="不可停用" />
-        </div>
-
-        {broken.length > 0 && (
-          <Card className="border-amber-500/40 bg-amber-500/10">
-            <CardHeader className="pb-1">
-              <CardTitle className="flex items-center gap-1.5 text-[12px] text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                {broken.length} 个符号链接失效
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-[11.5px] text-muted-foreground">
-              <ul className="space-y-0.5">
-                {broken.slice(0, 6).map((s) => (
-                  <li key={s.id} className="truncate font-mono" title={s.id}>
-                    {s.id}
-                  </li>
-                ))}
-                {broken.length > 6 ? <li>…另有 {broken.length - 6} 个</li> : null}
-              </ul>
-            </CardContent>
-          </Card>
+        {unmanaged && (
+          <div className="flex items-center gap-3 rounded-md border border-primary/40 bg-primary/5 px-3.5 py-3">
+            <Sparkles className="h-4 w-4 shrink-0 text-foreground" />
+            <p className="min-w-0 flex-1 text-xs font-medium">
+              发现 {unmanaged.total} 个未纳入中央仓库的 skill
+            </p>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  static
+                  className="h-8 shrink-0 gap-1.5 text-xs"
+                  disabled={unmanaged.busy}
+                >
+                  {unmanaged.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  去处理
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 text-sm">
+                <DropdownMenuItem onSelect={() => unmanaged.onOpen()}>
+                  <div className="min-w-0">
+                    <p>由我决定</p>
+                    <p className="mt-0.5 text-2xs text-muted-foreground">
+                      逐个查看，自己选择处理方式
+                    </p>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={unmanaged.total - unmanaged.conflicts === 0}
+                  onSelect={() => unmanaged.onAdoptAll()}
+                >
+                  <div className="min-w-0">
+                    <p>一键导入</p>
+                    <p className="mt-0.5 text-2xs text-muted-foreground">
+                      {unmanaged.conflicts > 0
+                        ? `${unmanaged.total - unmanaged.conflicts} 个直接纳入，${unmanaged.conflicts} 个同名冲突留给你决定`
+                        : `全部 ${unmanaged.total} 个直接纳入中央仓库`}
+                    </p>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         )}
 
-        <div>
-          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-            <HardDrive className="h-3 w-3" />
-            存储位置
-          </p>
-          <div className="grid gap-2 md:grid-cols-3">
-            {SOURCES.map((src) => {
-              const list = bySource(src)
-              return (
-                <button
-                  key={src}
-                  type="button"
-                  onClick={() => onJump({ kind: 'location', source: src })}
-                  className="rounded-md border bg-card p-3 text-left transition-colors hover:bg-accent/50"
-                >
-                  <div className="flex items-center gap-2">
-                    <AgentIcon agent={src} />
-                    <span className="text-[13px] font-medium">{SOURCE_LABEL[src]}</span>
-                    <span className="ml-auto tabular-nums text-[13px]">{list.length}</span>
-                  </div>
-                  <dl className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
-                    <div className="flex justify-between">
-                      <dt>启用</dt>
-                      <dd className="tabular-nums">{list.filter((s) => s.enabled && !s.builtin).length}</dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt>停用</dt>
-                      <dd className="tabular-nums">{list.filter((s) => !s.enabled && !s.builtin).length}</dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt>体积</dt>
-                      <dd className="tabular-nums">{formatBytes(list.reduce((n, s) => n + s.byteSize, 0))}</dd>
-                    </div>
-                  </dl>
-                </button>
-              )
-            })}
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex items-end gap-3">
+            <span className="text-hero font-semibold tracking-tight tabular-nums">
+              {central.length}
+            </span>
+            <div className="pb-1 text-sm leading-tight text-muted-foreground">
+              <p>个 skill 在中央仓库</p>
+              <p className="font-mono text-xs">{formatBytes(totalBytes)}</p>
+            </div>
+          </div>
+          <div className="flex gap-5 pb-1.5 text-xs text-muted-foreground">
+            <span>
+              <span className="font-mono text-sm font-medium text-foreground">{linked.length}</span>{' '}
+              启用
+            </span>
+            <span>
+              <span className="font-mono text-sm font-medium text-foreground">
+                {unlinked.length}
+              </span>{' '}
+              未启用
+            </span>
+            <span>
+              <span className="font-mono text-sm font-medium text-foreground">
+                {builtin.length}
+              </span>{' '}
+              内置
+            </span>
+            <span>
+              <span className="font-mono text-sm font-medium text-foreground">
+                {external.length}
+              </span>{' '}
+              未纳管
+            </span>
           </div>
         </div>
 
-        <div>
-          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-            <Boxes className="h-3 w-3" />
-            工作区
-          </p>
-          <div className="grid gap-2 md:grid-cols-3">
-            {AGENTS.map((agent) => {
-              const srcs = AGENT_SOURCES[agent]
-              const list = skills.filter((s) => srcs.includes(s.source))
-              const uniq = new Set(list.map((s) => s.name)).size
-              return (
-                <button
-                  key={agent}
-                  type="button"
-                  onClick={() => onJump({ kind: 'workspace', agent })}
-                  className="rounded-md border bg-card p-3 text-left transition-colors hover:bg-accent/50"
-                >
-                  <div className="flex items-center gap-2">
-                    <AgentIcon agent={agent} />
-                    <span className="text-[13px] font-medium">{SOURCE_LABEL[agent]}</span>
-                    <span className="ml-auto tabular-nums text-[13px]">{list.length}</span>
-                  </div>
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    {uniq} 个不重复 skill · 读取 {srcs.length} 个位置
-                  </p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    {srcs.map((s) => (
-                      <span key={s} className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <AgentIcon agent={s} className="h-3 w-3" />
-                        {SOURCE_LABEL[s]}
-                      </span>
-                    ))}
-                  </div>
-                </button>
-              )
-            })}
+        {brokenLinks.length > 0 && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3.5 py-2.5">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-destructive-text">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {brokenLinks.length} 个 skill 在某处链接失效
+            </p>
+            <ul className="mt-1.5 space-y-0.5 font-mono text-2xs text-muted-foreground">
+              {brokenLinks.slice(0, 6).map((s) => (
+                <li key={s.id} className="truncate" title={s.id}>
+                  {s.name}
+                </li>
+              ))}
+              {brokenLinks.length > 6 ? <li>…另有 {brokenLinks.length - 6} 个</li> : null}
+            </ul>
           </div>
+        )}
+
+        {occupied.length > 0 && (
+          <div className="rounded-md border border-warn/40 bg-warn/10 px-3.5 py-2.5">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-warn">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {occupied.length} 个 skill 在某个存储位置被非纳管条目占用
+            </p>
+            <p className="mt-1 text-2xs text-muted-foreground">
+              这些位置不会自动覆盖；可在「未纳管的 skill」弹窗里逐个归集，或手动处理后重试。
+            </p>
+          </div>
+        )}
+
+        <div className="grid gap-x-10 gap-y-7 md:grid-cols-[3fr_2fr]">
+          <section className="grid content-start gap-1">
+            <h2 className="pb-1 text-sm font-medium text-muted-foreground">中央仓库</h2>
+            <div className="border-t border-border">
+              <button
+                type="button"
+                onClick={() => onJump({ kind: 'repository' })}
+                className={cn(
+                  FOCUS_RING,
+                  'w-full border-b border-border py-3 text-left transition-colors hover:bg-accent/40',
+                )}
+              >
+                <div className="flex items-center gap-3 px-1">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-accent text-accent-foreground">
+                    <Package className="h-3 w-3" />
+                  </span>
+                  <span className="flex-1 truncate text-sm font-medium">全部 skill</span>
+                  <span className="font-mono text-base tabular-nums">{central.length}</span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                </div>
+                <p className="mt-2 px-1 text-2xs text-muted-foreground">
+                  {linked.length} 启用，{unlinked.length} 未启用，{formatBytes(totalBytes)}
+                </p>
+              </button>
+            </div>
+          </section>
+
+          <section className="grid content-start gap-1">
+            <h2 className="pb-1 text-sm font-medium text-muted-foreground">存储位置</h2>
+            <div className="border-t border-border">
+              {SOURCES.map((src) => {
+                const here = skills.filter((s) => skillInView(s, { kind: 'location', source: src }))
+                const hereLinked = symlinkCount(skills, { kind: 'location', source: src })
+                const foreign = here.filter((s) => s.kind === 'external').length
+                const native = here.filter((s) => s.kind === 'builtin').length
+                return (
+                  <button
+                    key={src}
+                    type="button"
+                    onClick={() => onJump({ kind: 'location', source: src })}
+                    className={cn(
+                      FOCUS_RING,
+                      'w-full border-b border-border py-3 text-left transition-colors hover:bg-accent/40',
+                    )}
+                  >
+                    <div className="flex items-center gap-3 px-1">
+                      <AgentIcon agent={src} className="h-5 w-5" />
+                      <span className="flex-1 truncate text-sm font-medium">
+                        {SOURCE_LABEL[src]}
+                      </span>
+                      <span className="font-mono text-base tabular-nums">{here.length}</span>
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    </div>
+                    <p className="mt-2 px-1 text-2xs text-muted-foreground">
+                      {hereLinked} 条软链
+                      {native > 0 ? `，${native} 个内置` : ''}
+                      {foreign > 0 ? `，${foreign} 个未纳管` : ''}
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="grid content-start gap-1">
+            <h2 className="pb-1 text-sm font-medium text-muted-foreground">工作区</h2>
+            <div className="border-t border-border">
+              {AGENTS.map((agent) => {
+                const srcs = AGENT_SOURCES[agent]
+                const inView = skills.filter((s) => skillInView(s, { kind: 'workspace', agent }))
+                const available = linkedCount(skills, { kind: 'workspace', agent })
+                const foreign = skills.filter(
+                  (s) =>
+                    s.kind === 'external' &&
+                    s.origin !== null &&
+                    AGENT_SOURCES[agent].includes(s.origin),
+                ).length
+                return (
+                  <button
+                    key={agent}
+                    type="button"
+                    onClick={() => onJump({ kind: 'workspace', agent })}
+                    className={cn(
+                      FOCUS_RING,
+                      'flex w-full items-center gap-3 border-b border-border py-3 text-left transition-colors hover:bg-accent/40',
+                    )}
+                  >
+                    <AgentIcon agent={agent} className="h-5 w-5" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{SOURCE_LABEL[agent]}</p>
+                      <p className="mt-0.5 text-2xs text-muted-foreground">
+                        可用 {available} 个，读取 {srcs.length} 个位置
+                        {foreign > 0 ? `，另有 ${foreign} 个未纳管` : ''}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-2xs text-muted-foreground">
+                        {srcs.map((s) => (
+                          <span key={s} className="flex items-center gap-1">
+                            <AgentIcon agent={s} className="h-3 w-3" />
+                            {SOURCE_LABEL[s]}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <span className="font-mono text-base tabular-nums">{inView.length}</span>
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  </button>
+                )
+              })}
+            </div>
+          </section>
         </div>
       </div>
     </ScrollArea>

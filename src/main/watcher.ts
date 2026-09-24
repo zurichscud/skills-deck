@@ -1,7 +1,8 @@
-import { BrowserWindow } from 'electron'
+import { SKILL_SOURCES } from '@shared/types'
 import chokidar from 'chokidar'
-import { disabledRoot, disabledSourceRootFor, sourceRootFor } from './paths'
-import type { SkillSource } from '@shared/types'
+import { BrowserWindow } from 'electron'
+
+import { centralRoot, sourceRootFor } from './paths'
 
 const DEBOUNCE_MS = 350
 
@@ -15,12 +16,7 @@ function shouldIgnore(p: string): boolean {
 }
 
 export function startWatcher(onChange: () => void): () => void {
-  const sources: SkillSource[] = ['claude', 'codex', 'opencode']
-  const roots = [
-    ...sources.map((s) => sourceRootFor(s)),
-    disabledRoot(),
-    ...sources.map((s) => disabledSourceRootFor(s))
-  ]
+  const roots = [centralRoot(), ...SKILL_SOURCES.map((s) => sourceRootFor(s))]
 
   let timer: NodeJS.Timeout | null = null
   const fire = (): void => {
@@ -35,7 +31,7 @@ export function startWatcher(onChange: () => void): () => void {
     ignoreInitial: true,
     depth: 4,
     ignored: shouldIgnore,
-    awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 60 }
+    awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 60 },
   })
 
   watcher.on('all', fire)

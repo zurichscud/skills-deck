@@ -1,5 +1,8 @@
-import { type ReactElement } from 'react'
+import { SOURCE_LABEL, type LinkState, type Skill, type SkillSource } from '@shared/types'
 import { Loader2, MoreHorizontal } from 'lucide-react'
+import { type ReactElement } from 'react'
+
+import { AgentIcon } from '@/components/agent-icons'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -7,24 +10,136 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import {
+  linkStateOf,
+  linkTargetsFor,
+  localSourceInView,
+  switchSourceFor,
+  type ListView,
+} from '@/hooks/use-skills'
 import { cn } from '@/lib/utils'
-import { SOURCE_LABEL, type Skill } from '@shared/types'
 
-function stateHint(skill: Skill): string {
-  if (skill.builtin) return '内置 skill，不可停用'
-  if (skill.entryKind === 'broken') return '符号链接失效，无法操作'
-  return skill.enabled ? '启用中' : '已停用'
+const LINK_HINT: Record<LinkState, string> = {
+  linked: '已链接，点击取消',
+  absent: '未链接，点击链接',
+  broken: '该位置是失效软链，点击替换为指向中央仓库的链接',
+  conflict: '该位置已被同名条目占用，需手动处理',
+  native: 'Codex 内置，天然可用',
+}
+
+const FOCUS_RING =
+  'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
+
+/** 单一启用位置：开/关软链；本地条目与内置天然可用，未纳管的其他情况禁用 */
+function EnableSwitch({
+  skill,
+  source,
+  pending,
+  onToggle,
+}: {
+  skill: Skill
+  source: SkillSource
+  pending: boolean
+  onToggle: (skill: Skill, source: SkillSource, next: boolean) => void
+}): ReactElement {
+  const state = linkStateOf(skill, source)
+  const local = skill.kind === 'external' && skill.origin === source
+  const checked = local || state === 'linked' || state === 'native'
+  const disabled =
+    pending ||
+    local ||
+    skill.kind === 'external' ||
+    skill.kind === 'builtin' ||
+    state === 'conflict'
+
+  const hint = local
+    ? '本地条目：内容就在这个位置，agent 天然可用（尚未纳入中央仓库）'
+    : skill.kind === 'external'
+      ? '未纳管条目，无法在此启用'
+      : skill.kind === 'builtin'
+        ? 'Codex 内置，天然可用'
+        : state === 'conflict'
+          ? '该位置已被同名条目占用，需手动处理'
+          : state === 'broken'
+            ? '该位置是失效软链，开启会替换为指向中央仓库的链接'
+            : checked
+              ? '已启用，关闭将移除该位置的软链'
+              : '未启用，开启将创建指向中央仓库的软链'
+
+  return (
+    <Switch
+      checked={checked}
+      disabled={disabled}
+      title={hint}
+      onCheckedChange={(next) => onToggle(skill, source, next)}
+      aria-label={`${checked ? '停用' : '启用'} ${skill.name}（${SOURCE_LABEL[source]}）`}
+    />
+  )
+}
+
+function typeLabel(skill: Skill, view: ListView): string {
+  if (skill.kind === 'central') return '中央仓库'
+  if (skill.kind === 'builtin') return 'Codex 内置'
+  return localSourceInView(skill, view) ? '本地' : '未纳管'
+}
+
+function LinkToggle({
+  skill,
+  source,
+  pending,
+  onToggle,
+}: {
+  skill: Skill
+  source: SkillSource
+  pending: boolean
+  onToggle: (skill: Skill, source: SkillSource, next: boolean) => void
+}): ReactElement {
+  const state = linkStateOf(skill, source)
+  const local = skill.kind === 'external' && skill.origin === source
+  const linked = local || state === 'linked' || state === 'native'
+  const disabled = pending || local || state === 'native' || state === 'conflict'
+
+  const hint = local
+    ? '本地条目：内容就在这个位置，agent 天然可用（尚未纳入中央仓库）'
+    : LINK_HINT[state]
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      title={`${SOURCE_LABEL[source]}：${hint}`}
+      aria-label={`${SOURCE_LABEL[source]} ${linked ? '取消链接' : '链接'} ${skill.name}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle(skill, source, !linked)
+      }}
+      data-source={source}
+      data-linked={linked && state !== 'conflict' && !local ? 'true' : undefined}
+      data-state={state === 'broken' && !local ? 'broken' : undefined}
+      className={cn(
+        FOCUS_RING,
+        'link-toggle flex h-6 w-6 items-center justify-center rounded-md border transition-colors',
+        !linked && state !== 'conflict' && state !== 'broken' && 'border-dashed border-border',
+        state === 'conflict' && !local && 'border-warn/50 text-warn',
+        disabled ? 'cursor-default opacity-70' : 'hover:border-foreground/30',
+        !disabled && linked && 'hover:opacity-80',
+      )}
+    >
+      <AgentIcon agent={source} className="h-3.5 w-3.5" />
+    </button>
+  )
 }
 
 export interface SkillTableProps {
   skills: Skill[]
+  view: ListView
   loading: boolean
-  /** 工作区视图：同一 skill 可能来自多个位置，需要显示位置列 */
-  showLocation: boolean
+  /** 当前存在搜索词或状态筛选（决定空状态文案） */
+  filtered: boolean
   selectedId: string | null
   pendingIds: ReadonlySet<string>
   checkedIds: ReadonlySet<string>
@@ -32,16 +147,17 @@ export interface SkillTableProps {
   onToggleAll: () => void
   allChecked: boolean
   onSelect: (skill: Skill) => void
-  onSetEnabled: (skill: Skill, next: boolean) => void
-  onCopyTo: (skill: Skill) => void
+  onToggleLink: (skill: Skill, source: SkillSource, next: boolean) => void
+  onAdopt: () => void
   onReveal: (skill: Skill) => void
   onDelete: (skill: Skill) => void
 }
 
 export function SkillTable({
   skills,
+  view,
   loading,
-  showLocation,
+  filtered,
   selectedId,
   pendingIds,
   checkedIds,
@@ -49,11 +165,15 @@ export function SkillTable({
   onToggleAll,
   allChecked,
   onSelect,
-  onSetEnabled,
-  onCopyTo,
+  onToggleLink,
+  onAdopt,
   onReveal,
-  onDelete
+  onDelete,
 }: SkillTableProps): ReactElement {
+  const switchSource = switchSourceFor(view)
+  /** 未纳管视图：来源图标代替链接开关，操作只保留「纳入中央仓库 / 删除」 */
+  const isUnmanaged = view.kind === 'unmanaged'
+
   if (loading) {
     return (
       <div className="space-y-2 p-4">
@@ -67,102 +187,192 @@ export function SkillTable({
   if (skills.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-        <p className="text-sm font-medium">没有匹配的 skill</p>
-        <p className="text-[13px] text-muted-foreground">调整搜索词或上方状态筛选再试。</p>
+        {filtered ? (
+          <>
+            <p className="text-sm font-medium">没有匹配的 skill</p>
+            <p className="text-sm text-muted-foreground">调整搜索词或上方状态筛选再试。</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-medium">这里还没有 skill</p>
+            <p className="text-sm text-muted-foreground">
+              检查设置中的仓库地址，或点击右上角刷新重新扫描。
+            </p>
+          </>
+        )}
       </div>
     )
   }
 
   return (
     <div className="h-full overflow-auto">
-      <table className="w-full min-w-[620px] table-fixed border-collapse text-[13px]">
+      <table className="w-full min-w-[680px] table-fixed border-collapse text-sm">
         <thead className="sticky top-0 z-10 bg-background">
-          <tr className="border-b text-left text-[11px] uppercase tracking-wider text-muted-foreground/70">
+          <tr className="border-b text-left text-2xs font-medium text-muted-foreground">
             <th className="w-8 px-2 py-2">
-              <Checkbox checked={allChecked} onCheckedChange={onToggleAll} aria-label="全选" />
+              <Checkbox
+                checked={allChecked}
+                onCheckedChange={onToggleAll}
+                onClick={(e) => e.stopPropagation()}
+                aria-label="全选"
+              />
             </th>
-            <th className="w-[180px] px-2 py-2 font-medium">名称</th>
-            <th className="px-2 py-2 font-medium">描述</th>
-            {showLocation && <th className="w-[88px] px-2 py-2 font-medium">位置</th>}
-            <th className="w-[56px] px-2 py-2 font-medium">状态</th>
-            <th className="w-10 px-1 py-2" />
+            <th className="w-[190px] px-2 py-2">名称</th>
+            <th className="px-2 py-2">描述</th>
+            {!isUnmanaged && <th className="w-[132px] px-2 py-2">类型</th>}
+            <th
+              className={cn(
+                'px-2 py-2',
+                isUnmanaged ? 'w-[64px]' : switchSource ? 'w-[64px]' : 'w-[112px]',
+              )}
+            >
+              {isUnmanaged ? '来源' : switchSource ? '启用' : '链接'}
+            </th>
+            <th className="w-10 px-1 py-2">
+              <span className="sr-only">操作</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           {skills.map((skill) => {
             const pending = pendingIds.has(skill.id)
             const selected = skill.id === selectedId
-            const locked = skill.builtin || skill.entryKind === 'broken'
+            const targets = linkTargetsFor(skill, view)
             return (
               <tr
                 key={skill.id}
                 onClick={() => onSelect(skill)}
                 className={cn(
-                  'cursor-pointer border-b border-border/50 transition-colors hover:bg-accent/40',
-                  selected && 'bg-accent/60'
+                  'cursor-pointer border-b border-border/60 transition-colors hover:bg-accent/50',
+                  selected && 'row-select-rail bg-accent/60',
                 )}
               >
-                <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                <td
+                  className="cursor-pointer px-2 py-2"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleCheck(skill.id)
+                  }}
+                >
                   <Checkbox
                     checked={checkedIds.has(skill.id)}
                     onCheckedChange={() => onToggleCheck(skill.id)}
+                    onClick={(e) => e.stopPropagation()}
                     aria-label={`选择 ${skill.name}`}
                   />
                 </td>
                 <td className="px-2 py-2">
                   <div className="flex items-center gap-1.5">
-                    {pending && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />}
-                    <span className="truncate font-mono text-[12.5px]" title={skill.name}>
+                    {pending && (
+                      <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+                    )}
+                    <span className="truncate font-mono text-xs" title={skill.name}>
                       {skill.name}
                     </span>
                   </div>
                 </td>
                 <td className="px-2 py-2">
                   <span className="block truncate text-muted-foreground" title={skill.description}>
-                    {skill.description || '—'}
+                    {skill.description || '无描述'}
                   </span>
                 </td>
-                {showLocation && (
+                {!isUnmanaged && (
                   <td className="px-2 py-2">
-                    <span className="block truncate text-[11.5px] text-muted-foreground/70" title={skill.dirPath}>
-                      {SOURCE_LABEL[skill.source]}
+                    <span
+                      className={cn(
+                        'block truncate text-2xs',
+                        skill.kind === 'external' && localSourceInView(skill, view) === null
+                          ? 'text-warn'
+                          : 'text-muted-foreground',
+                      )}
+                      title={
+                        skill.kind === 'external' && localSourceInView(skill, view) !== null
+                          ? `本地条目：${skill.dirPath}（尚未纳入中央仓库）`
+                          : skill.dirPath
+                      }
+                    >
+                      {typeLabel(skill, view)}
                     </span>
                   </td>
                 )}
                 <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
-                  <div title={stateHint(skill)}>
-                    <Switch
-                      checked={skill.enabled}
-                      disabled={locked || pending}
-                      onCheckedChange={(next) => onSetEnabled(skill, next)}
-                      aria-label={`${skill.enabled ? '停用' : '启用'} ${skill.name}`}
+                  {isUnmanaged ? (
+                    <span
+                      className="flex h-6 w-6 items-center justify-center"
+                      title={skill.origin ? `来源：${SOURCE_LABEL[skill.origin]}` : undefined}
+                    >
+                      {skill.origin && <AgentIcon agent={skill.origin} className="h-3.5 w-3.5" />}
+                    </span>
+                  ) : switchSource ? (
+                    <EnableSwitch
+                      skill={skill}
+                      source={switchSource}
+                      pending={pending}
+                      onToggle={onToggleLink}
                     />
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      {targets.map((source) => (
+                        <LinkToggle
+                          key={source}
+                          skill={skill}
+                          source={source}
+                          pending={pending}
+                          onToggle={onToggleLink}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </td>
-                <td className="px-1 py-2" onClick={(e) => e.stopPropagation()}>
+                <td className="px-1 py-2">
+                  <span className="sr-only">操作</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="更多操作">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        static
+                        className="h-6 w-6"
+                        aria-label={`更多操作：${skill.name}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <MoreHorizontal className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="text-[13px]">
-                      <DropdownMenuItem disabled={skill.builtin} onSelect={() => onCopyTo(skill)}>
-                        复制到其他来源…
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => onReveal(skill)}>在 Finder 中显示</DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={skill.builtin}
-                        variant="destructive"
-                        onSelect={() => onDelete(skill)}
-                      >
-                        永久删除…
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem disabled className="font-mono text-[11px] opacity-60">
-                        {skill.id}
-                      </DropdownMenuItem>
+                    <DropdownMenuContent align="end" className="text-sm">
+                      {isUnmanaged ? (
+                        <>
+                          <DropdownMenuItem onSelect={() => onAdopt()}>
+                            纳入中央仓库…
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem variant="destructive" onSelect={() => onDelete(skill)}>
+                            删除
+                          </DropdownMenuItem>
+                        </>
+                      ) : (
+                        <>
+                          {skill.kind === 'external' && (
+                            <>
+                              <DropdownMenuItem onSelect={() => onAdopt()}>
+                                纳入中央仓库…
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
+                          <DropdownMenuItem onSelect={() => onReveal(skill)}>
+                            打开所在文件夹
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            disabled={skill.kind === 'builtin'}
+                            variant="destructive"
+                            onSelect={() => onDelete(skill)}
+                          >
+                            删除
+                          </DropdownMenuItem>
+                        </>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </td>

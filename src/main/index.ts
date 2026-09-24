@@ -1,5 +1,7 @@
-import { BrowserWindow, app, shell } from 'electron'
 import { join } from 'node:path'
+
+import { BrowserWindow, app, shell } from 'electron'
+
 import { registerIpc, wireCloseBehavior } from './ipc'
 
 function showWindow(win: BrowserWindow): void {
@@ -18,6 +20,7 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0a0a0a',
+    icon: join(app.getAppPath(), 'resources', 'icon.png'),
     ...(process.platform === 'darwin'
       ? ({ titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 16 } } as const)
       : {}),
@@ -26,8 +29,8 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      spellcheck: false
-    }
+      spellcheck: false,
+    },
   })
 
   win.on('ready-to-show', () => win.show())

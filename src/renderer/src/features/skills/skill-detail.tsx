@@ -1,20 +1,105 @@
-import { type ReactElement, useMemo } from 'react'
-import { File, FileText, FolderOpen, Image, Link2, Terminal } from 'lucide-react'
+import {
+  SKILL_SOURCES,
+  SOURCE_LABEL,
+  type LinkState,
+  type Skill,
+  type SkillFile,
+  type SkillFileKind,
+  type SkillSource,
+} from '@shared/types'
+import {
+  AlertTriangle,
+  ChevronRight,
+  File,
+  FileText,
+  Folder,
+  FolderOpen,
+  Image,
+  Link2,
+  Link2Off,
+  Terminal,
+} from 'lucide-react'
+import { type ReactElement, useMemo, useState } from 'react'
+
+import { AgentIcon } from '@/components/agent-icons'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
+import { isActive } from '@/hooks/use-skills'
 import { cn, formatBytes, formatRelativeTime } from '@/lib/utils'
-import { SOURCE_LABEL, type Skill, type SkillFileKind } from '@shared/types'
+
+const FOCUS_RING =
+  'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 function StatusBadge({ skill }: { skill: Skill }): ReactElement {
-  if (skill.builtin) return <Badge variant="outline" className="text-[11px]">内置</Badge>
-  if (skill.entryKind === 'broken') return <Badge variant="destructive" className="text-[11px]">失效</Badge>
+  if (skill.kind === 'builtin')
+    return (
+      <Badge variant="outline" className="text-2xs">
+        内置
+      </Badge>
+    )
+  if (skill.kind === 'external') {
+    return skill.links[skill.origin as SkillSource]?.state === 'broken' ? (
+      <Badge variant="destructive" className="text-2xs">
+        失效
+      </Badge>
+    ) : (
+      <Badge variant="outline" className="border-warn/50 text-2xs text-warn">
+        未纳管
+      </Badge>
+    )
+  }
+  if (isActive(skill))
+    return (
+      <Badge variant="outline" className="border-ok/40 text-2xs text-ok">
+        已启用
+      </Badge>
+    )
   return (
-    <Badge variant={skill.enabled ? 'default' : 'secondary'} className="text-[11px]">
-      {skill.enabled ? '启用' : '停用'}
+    <Badge variant="secondary" className="text-2xs">
+      未启用
     </Badge>
+  )
+}
+
+const LINK_LABEL: Record<LinkState, string> = {
+  linked: '已启用',
+  absent: '未启用',
+  broken: '失效软链',
+  conflict: '被占用',
+  native: '内置可用',
+}
+
+const LINK_STYLE: Record<LinkState, string> = {
+  linked: 'text-ok',
+  absent: 'text-muted-foreground',
+  broken: 'text-warn',
+  conflict: 'text-warn',
+  native: 'text-muted-foreground',
+}
+
+function LinkRow({ skill, source }: { skill: Skill; source: SkillSource }): ReactElement | null {
+  const link = skill.links[source]
+  if (skill.kind === 'external' && skill.origin !== source) return null
+
+  return (
+    <div className="flex items-start gap-2 py-1.5">
+      <AgentIcon agent={source} className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-xs">{SOURCE_LABEL[source]}</span>
+          <span className={cn('text-2xs', LINK_STYLE[link.state])}>{LINK_LABEL[link.state]}</span>
+        </div>
+        {link.path && (
+          <p className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">{link.path}</p>
+        )}
+        {link.target && link.state !== 'linked' && (
+          <p className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">
+            → {link.target}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -22,11 +107,11 @@ const KIND_META: Record<SkillFileKind, { label: string; icon: typeof File }> = {
   md: { label: 'Markdown', icon: FileText },
   script: { label: '脚本', icon: Terminal },
   asset: { label: '资源', icon: Image },
-  other: { label: '其它', icon: File }
+  other: { label: '其它', icon: File },
 }
 
 function formatValue(v: unknown): string {
-  if (v == null) return '—'
+  if (v == null) return '无'
   if (typeof v === 'string') return v
   if (typeof v === 'number' || typeof v === 'boolean') return String(v)
   try {
@@ -36,15 +121,123 @@ function formatValue(v: unknown): string {
   }
 }
 
-export interface SkillDetailProps {
-  skill: Skill | null
-  pending: boolean
-  onSetEnabled: (skill: Skill, next: boolean) => void
-  onCopyTo: (skill: Skill) => void
-  onReveal: (skill: Skill) => void
+type TreeNode =
+  | { type: 'file'; path: string; name: string; file: SkillFile }
+  | { type: 'dir'; path: string; name: string; children: TreeNode[] }
+
+function buildFileTree(files: SkillFile[]): TreeNode[] {
+  const root: TreeNode[] = []
+
+  for (const file of files) {
+    const parts = file.path.split('/').filter(Boolean)
+    let level = root
+    for (let i = 0; i < parts.length; i++) {
+      const name = parts[i]
+      const path = parts.slice(0, i + 1).join('/')
+      const isFile = i === parts.length - 1
+      if (isFile) {
+        level.push({ type: 'file', path, name, file })
+        break
+      }
+      let dir = level.find(
+        (n): n is Extract<TreeNode, { type: 'dir' }> => n.type === 'dir' && n.name === name,
+      )
+      if (!dir) {
+        dir = { type: 'dir', path, name, children: [] }
+        level.push(dir)
+      }
+      level = dir.children
+    }
+  }
+
+  const sortNodes = (nodes: TreeNode[]): void => {
+    nodes.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+    for (const n of nodes) if (n.type === 'dir') sortNodes(n.children)
+  }
+  sortNodes(root)
+  return root
 }
 
-export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }: SkillDetailProps): ReactElement {
+interface FileTreeProps {
+  nodes: TreeNode[]
+  depth: number
+  collapsed: ReadonlySet<string>
+  onToggle: (path: string) => void
+}
+
+function FileTree({ nodes, depth, collapsed, onToggle }: FileTreeProps): ReactElement {
+  return (
+    <>
+      {nodes.map((node) => {
+        if (node.type === 'file') {
+          const Icon = KIND_META[node.file.kind].icon
+          return (
+            <div
+              key={node.path}
+              className="flex items-center justify-between gap-2 py-0.5 text-2xs"
+              style={{ paddingInlineStart: depth * 14 + 4 }}
+            >
+              <span
+                className="flex min-w-0 items-center gap-1.5 font-mono text-muted-foreground"
+                title={node.path}
+              >
+                <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="truncate">{node.name}</span>
+              </span>
+              <span className="shrink-0 text-muted-foreground tabular-nums">
+                {formatBytes(node.file.size)}
+              </span>
+            </div>
+          )
+        }
+
+        const open = !collapsed.has(node.path)
+        return (
+          <div key={node.path}>
+            <button
+              type="button"
+              onClick={() => onToggle(node.path)}
+              aria-expanded={open}
+              aria-label={`${open ? '折叠' : '展开'}目录 ${node.name}`}
+              className={cn(
+                FOCUS_RING,
+                'flex w-full items-center gap-1 py-0.5 text-left text-2xs text-muted-foreground transition-colors hover:text-foreground',
+              )}
+              style={{ paddingInlineStart: depth * 14 }}
+            >
+              <ChevronRight
+                className={cn('h-3 w-3 shrink-0 transition-transform', open && 'rotate-90')}
+              />
+              {open ? (
+                <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
+              ) : (
+                <Folder className="h-3 w-3 shrink-0 text-muted-foreground" />
+              )}
+              <span className="truncate font-mono">{node.name}</span>
+            </button>
+            {open && (
+              <FileTree
+                nodes={node.children}
+                depth={depth + 1}
+                collapsed={collapsed}
+                onToggle={onToggle}
+              />
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+export interface SkillDetailProps {
+  skill: Skill | null
+}
+
+export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
   const grouped = useMemo(() => {
     const map = new Map<SkillFileKind, Skill['files']>()
     if (skill) {
@@ -57,112 +250,98 @@ export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }
     return map
   }, [skill])
 
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+
+  const toggleDir = (path: string): void => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
   if (!skill) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <p className="text-sm font-medium text-muted-foreground">未选中 skill</p>
-        <p className="text-[13px] text-muted-foreground/70">在左侧列表中选择一项查看详情。</p>
+        <p className="text-sm font-medium text-muted-foreground">未选择 skill</p>
+        <p className="text-sm text-muted-foreground">
+          在列表中选择一项，这里会显示链接状态、路径、frontmatter 和文件。
+        </p>
       </div>
     )
   }
 
-  const locked = skill.builtin || skill.entryKind === 'broken'
   const fmEntries = Object.entries(skill.frontmatter)
+  const brokenExternal =
+    skill.kind === 'external' &&
+    skill.origin !== null &&
+    skill.links[skill.origin].state === 'broken'
 
   return (
     <ScrollArea className="h-full">
       <div className="flex flex-col gap-4 p-4">
         <div>
           <div className="flex items-start justify-between gap-2">
-            <h2 className="break-all font-mono text-[15px] font-semibold leading-snug">{skill.name}</h2>
+            <h2 className="font-mono text-base leading-snug font-semibold break-all">
+              {skill.name}
+            </h2>
             <StatusBadge skill={skill} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <Badge variant="outline" className="gap-1.5 text-[11px]">
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{
-                  background:
-                    skill.source === 'claude'
-                      ? 'var(--source-claude)'
-                      : skill.source === 'codex'
-                        ? 'var(--source-codex)'
-                        : 'var(--source-opencode)'
-                }}
-              />
-              {SOURCE_LABEL[skill.source]}
-            </Badge>
-            {skill.entryKind === 'symlink' && (
-              <Badge variant="outline" className="gap-1 text-[11px]">
+            {skill.kind === 'central' && (
+              <Badge variant="outline" className="gap-1 text-2xs">
                 <Link2 className="h-3 w-3" />
-                符号链接
+                中央仓库
               </Badge>
             )}
-            {skill.entryKind === 'broken' && <Badge variant="destructive">链接失效</Badge>}
-            {skill.builtin && <Badge variant="secondary">内置</Badge>}
+            {skill.kind === 'builtin' && <Badge variant="secondary">Codex 内置</Badge>}
+            {skill.kind === 'external' && (
+              <Badge variant="outline" className="gap-1 border-warn/50 text-2xs text-warn">
+                <Link2Off className="h-3 w-3" />
+                未纳管
+              </Badge>
+            )}
           </div>
-          <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">
-            {skill.description || '（无描述）'}
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            {skill.description || '无描述'}
           </p>
         </div>
 
-        <div className="flex items-center justify-between rounded-md border bg-card px-3 py-2">
-          <div>
-            <p className="text-[13px] font-medium">{skill.enabled ? '启用中' : '已停用'}</p>
-            <p className="text-[11px] text-muted-foreground">
-              {skill.enabled ? '对来源工具可见' : '存放在停用停车场'}
-            </p>
-          </div>
-          <Switch
-            checked={skill.enabled}
-            disabled={locked || pending}
-            onCheckedChange={(next) => onSetEnabled(skill, next)}
-            aria-label={`${skill.enabled ? '停用' : '启用'} ${skill.name}`}
-          />
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1 text-[13px]"
-            disabled={skill.builtin}
-            onClick={() => onCopyTo(skill)}
-          >
-            复制到其他来源…
-          </Button>
-          <Button size="sm" variant="outline" className="text-[13px]" onClick={() => onReveal(skill)}>
-            <FolderOpen className="mr-1 h-3.5 w-3.5" />
-            Finder
-          </Button>
-        </div>
-
-        {skill.entryKind === 'broken' && skill.linkTarget && (
+        {brokenExternal && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
-            <p className="text-[12px] font-medium text-destructive">符号链接失效</p>
-            <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">→ {skill.linkTarget}</p>
+            <p className="flex items-center gap-1.5 text-xs font-medium text-destructive-text">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              符号链接失效
+            </p>
           </div>
         )}
 
-        <div>
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">路径</p>
-          <dl className="space-y-1.5 text-[11.5px]">
+        {skill.kind !== 'external' && (
+          <>
+            <Separator />
             <div>
-              <dt className="text-muted-foreground/70">当前位置</dt>
-              <dd className="break-all font-mono text-muted-foreground">{skill.dirPath}</dd>
+              <h3 className="mb-1 text-2xs font-medium text-muted-foreground">启用状态</h3>
+              <div className="divide-y divide-border/50">
+                {SKILL_SOURCES.map((source) => (
+                  <LinkRow key={source} skill={skill} source={source} />
+                ))}
+              </div>
             </div>
-            {!skill.enabled && (
-              <div>
-                <dt className="text-muted-foreground/70">启用位置</dt>
-                <dd className="break-all font-mono text-muted-foreground">{skill.originPath}</dd>
-              </div>
-            )}
-            {skill.entryKind === 'symlink' && skill.linkTarget && (
-              <div>
-                <dt className="text-muted-foreground/70">链接真身</dt>
-                <dd className="break-all font-mono text-muted-foreground">{skill.linkTarget}</dd>
-              </div>
-            )}
+          </>
+        )}
+
+        <Separator />
+
+        <div>
+          <h3 className="mb-2 text-2xs font-medium text-muted-foreground">
+            {skill.kind === 'central' ? '真身路径' : '所在路径'}
+          </h3>
+          <dl className="space-y-1.5 text-2xs">
+            <div>
+              <dt className="text-muted-foreground">目录</dt>
+              <dd className="font-mono break-all text-foreground">{skill.dirPath}</dd>
+            </div>
           </dl>
         </div>
 
@@ -170,19 +349,19 @@ export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }
 
         <div>
           <div className="mb-2 flex items-baseline justify-between">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Frontmatter</p>
-            <span className="text-[11px] text-muted-foreground/60">{fmEntries.length} 字段</span>
+            <h3 className="text-2xs font-medium text-muted-foreground">Frontmatter</h3>
+            <span className="text-2xs text-muted-foreground">{fmEntries.length} 字段</span>
           </div>
           {fmEntries.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground/70">（无）</p>
+            <p className="text-xs text-muted-foreground">无</p>
           ) : (
-            <dl className="space-y-1 text-[12px]">
+            <dl className="space-y-2 text-xs">
               {fmEntries.map(([k, v]) => (
-                <div key={k} className="grid grid-cols-[88px_1fr] gap-2">
-                  <dt className="truncate font-mono text-muted-foreground/70" title={k}>
+                <div key={k}>
+                  <dt className="truncate font-mono text-muted-foreground" title={k}>
                     {k}
                   </dt>
-                  <dd className="break-all font-mono text-foreground/90" title={formatValue(v)}>
+                  <dd className="font-mono break-all text-foreground" title={formatValue(v)}>
                     {formatValue(v)}
                   </dd>
                 </div>
@@ -195,13 +374,13 @@ export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }
 
         <div>
           <div className="mb-2 flex items-baseline justify-between">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">文件</p>
-            <span className="text-[11px] text-muted-foreground/60">
-              {skill.files.length} 个 · {formatBytes(skill.byteSize)}
+            <h3 className="text-2xs font-medium text-muted-foreground">文件</h3>
+            <span className="text-2xs text-muted-foreground">
+              {skill.files.length} 个，共 {formatBytes(skill.byteSize)}
             </span>
           </div>
           {skill.files.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground/70">（空）</p>
+            <p className="text-xs text-muted-foreground">空</p>
           ) : (
             <div className="space-y-3">
               {(['md', 'script', 'asset', 'other'] as SkillFileKind[]).map((kind) => {
@@ -211,21 +390,19 @@ export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }
                 const Icon = meta.icon
                 return (
                   <div key={kind}>
-                    <p className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+                    <p className="mb-1 flex items-center gap-1.5 text-2xs text-muted-foreground">
                       <Icon className="h-3 w-3" />
                       {meta.label}
                       <span className="tabular-nums">({list.length})</span>
                     </p>
-                    <ul className="space-y-0.5">
-                      {list.map((f) => (
-                        <li key={f.path} className="flex items-center justify-between gap-2 text-[11.5px]">
-                          <span className="truncate font-mono text-muted-foreground" title={f.path}>
-                            {f.path}
-                          </span>
-                          <span className="shrink-0 tabular-nums text-muted-foreground/60">{formatBytes(f.size)}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="rounded-md border bg-muted/20 px-1.5 py-1">
+                      <FileTree
+                        nodes={buildFileTree(list)}
+                        depth={0}
+                        collapsed={collapsed}
+                        onToggle={toggleDir}
+                      />
+                    </div>
                   </div>
                 )
               })}
@@ -233,8 +410,8 @@ export function SkillDetail({ skill, pending, onSetEnabled, onCopyTo, onReveal }
           )}
         </div>
 
-        <p className={cn('pb-2 text-[10.5px] text-muted-foreground/50')}>
-          更新于 {skill.mtime ? formatRelativeTime(skill.mtime) : '—'}
+        <p className="pb-2 text-2xs text-muted-foreground">
+          {skill.mtime ? `更新于 ${formatRelativeTime(skill.mtime)}` : '更新时间未知'}
         </p>
       </div>
     </ScrollArea>
