@@ -19,7 +19,10 @@
     "release/**",
     "dist/**",
     "coverage/**",
-    "electron.vite.config.ts.timestamp-*"
+    "electron.vite.config.ts.timestamp-*",
+    "playwright-report/**",
+    "test-results/**",
+    "e2e/artifacts/**"
   ],
   "overrides": [
     {

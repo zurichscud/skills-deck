@@ -296,9 +296,16 @@ export class SkillStore {
     return this.adoptBatch(await scanUnmanaged())
   }
 
-  /** 批量纳入指定条目（选中若干项时使用），同名冲突同样跳过 */
+  /**
+   * 批量纳入指定条目（选中若干项时使用），同名冲突同样跳过。
+   * 兼容两种 id：`UnmanagedSkill.id`（`claude:foo`）与列表行的
+   * `Skill.id`（`external:claude:foo`）——渲染层勾选后传的是后者。
+   */
   async adoptManyUnmanaged(itemIds: string[]): Promise<AdoptAllResult | FailResult> {
     const wanted = new Set(itemIds)
+    for (const id of itemIds) {
+      if (id.startsWith('external:')) wanted.add(id.slice('external:'.length))
+    }
     const items = (await scanUnmanaged()).filter((i) => wanted.has(i.id))
     if (items.length === 0) return fail('NOT_FOUND', '未找到要纳入的条目')
     return this.adoptBatch(items)

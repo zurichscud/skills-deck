@@ -9,5 +9,17 @@
     "stylesheet": "src/renderer/src/assets/main.css",
     "functions": ["cn", "clsx", "cva"]
   },
-  "ignorePatterns": ["public", "resources", "build", "release", "out", "dist", "coverage", "*.md"]
+  "ignorePatterns": [
+    "public",
+    "resources",
+    "build",
+    "release",
+    "out",
+    "dist",
+    "coverage",
+    "playwright-report",
+    "test-results",
+    "e2e/artifacts",
+    "*.md"
+  ]
 }

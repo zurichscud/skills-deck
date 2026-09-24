@@ -11,6 +11,7 @@ npx vitest run tests/store.test.ts   # 单个文件
 npx vitest run -t "建链幂等"          # 按用例名过滤
 npm run check      # lint + format:check + typecheck（改完必跑）
 npm run format     # oxfmt 自动修复格式与 import/Tailwind 排序
+npm run test:e2e   # build + Playwright Electron E2E（沙箱隔离，报告在 playwright-report/，截图在 e2e/artifacts/）
 npm run dist       # lint + typecheck + build + electron-builder → release/<version>/
 ```
 
@@ -34,6 +35,7 @@ npm run dist       # lint + typecheck + build + electron-builder → release/<ve
 - **优先 E2E，把它当作唯一测试手段**：用真实应用（`npm run dev`）跑完整流程验证复杂特性。E2E 收尾必须留下**可验证、可复现的工件**（可重跑的脚本 / 报告 / 截图），只给口头结论不算完成。
 - 确实需要隔离测试某个系统时：**先穷举它可能失败的每一种方式，再写实现**（失败清单在前，代码在后）。
 - 现有 `tests/**/*.test.ts`（node 环境，vitest）只作为纯函数与写操作语义的历史回归保留：直接 import main 进程模块（相对路径）与 `use-skills.ts` 纯函数（`views.test.ts`），**必须用 vitest 跑**（依赖 `@shared` alias）。不要为新增实现事后补单测。
+- Electron E2E 在 `e2e/`（Playwright `_electron`，`npm run test:e2e`）：每个用例 `mkdtemp` 沙箱 + `SKILLSDECK_*` 环境变量隔离，只碰临时目录；工件为 `playwright-report/`（HTML）与 `e2e/artifacts/*.png`（关键步骤截图）。
 - 跑测试或 E2E 一律 `mkdtemp` 临时目录 + `SKILLSDECK_CENTRAL_ROOT`、`SKILLSDECK_SOURCE_ROOT_{CLAUDE,CODEX,OPENCODE}`、`SKILLSDECK_MANAGED_ROOT` 环境变量隔离，进程内配置用 `applyPathOverrides()`。**绝不要指向真实 `~` 目录**——导入/纳入/删除会自动对中央仓库 `git commit`（分支 `main`）。
 
 ## 文档

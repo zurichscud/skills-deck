@@ -4,7 +4,6 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -13,21 +12,12 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "allowImportingTsExtensions": true,
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/renderer/src/*"],
       "@shared/*": ["src/shared/*"]
     },
     "types": ["node"]
   },
-  "include": [
-    "src",
-    "electron.vite.config.ts",
-    "vitest.config.ts",
-    "tests",
-    "e2e",
-    "playwright.config.ts"
-  ]
+  "include": ["e2e/**/*", "playwright.config.ts", "src/shared/**/*"]
 }
