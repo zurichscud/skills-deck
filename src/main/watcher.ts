@@ -2,7 +2,7 @@ import { SKILL_SOURCES } from '@shared/types'
 import chokidar from 'chokidar'
 import { BrowserWindow } from 'electron'
 
-import { centralRoot, sourceRootFor } from './paths'
+import { sourceRootFor, trashRoot } from './paths'
 
 const DEBOUNCE_MS = 350
 
@@ -16,7 +16,7 @@ function shouldIgnore(p: string): boolean {
 }
 
 export function startWatcher(onChange: () => void): () => void {
-  const roots = [centralRoot(), ...SKILL_SOURCES.map((s) => sourceRootFor(s))]
+  const roots = [...SKILL_SOURCES.map((s) => sourceRootFor(s)), trashRoot()]
 
   let timer: NodeJS.Timeout | null = null
   const fire = (): void => {

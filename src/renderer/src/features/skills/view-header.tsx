@@ -1,5 +1,5 @@
 import { SOURCE_LABEL, type AppInfo, type Skill, type SkillSource } from '@shared/types'
-import { FolderOpen, Inbox, Package, RefreshCw, Search } from 'lucide-react'
+import { FolderOpen, RefreshCw, Search } from 'lucide-react'
 import { type ReactElement, type RefObject } from 'react'
 
 import { AgentIcon } from '@/components/agent-icons'
@@ -7,8 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AGENT_SOURCES, skillInView, type ListView } from '@/hooks/use-skills'
 import { cn } from '@/lib/utils'
-
-import { ImportMenu, type ImportMode } from './import-menu'
 
 export interface ViewHeaderProps {
   view: ListView
@@ -19,31 +17,16 @@ export interface ViewHeaderProps {
   searchRef: RefObject<HTMLInputElement | null>
   refreshing: boolean
   onRefresh: () => void
-  /** 导入入口：仅中央仓库视图提供，且只写入中央仓库 */
-  onImport: (mode: ImportMode) => void
-  /** 打开当前视图对应的目录 */
-  onOpenLocation: () => void
+  /** 在系统文件管理器里打开某个存储位置 */
+  onOpenLocation: (source: SkillSource) => void
 }
 
 function HeaderIcon({ view }: { view: ListView }): ReactElement {
-  if (view.kind === 'repository' || view.kind === 'unmanaged') {
-    return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
-        {view.kind === 'repository' ? (
-          <Package className="h-4 w-4" />
-        ) : (
-          <Inbox className="h-4 w-4" />
-        )}
-      </span>
-    )
-  }
   const agent: SkillSource = view.kind === 'location' ? view.source : view.agent
   return <AgentIcon agent={agent} className="h-8 w-8 shrink-0" />
 }
 
 function titleOf(view: ListView): string {
-  if (view.kind === 'repository') return '中央仓库'
-  if (view.kind === 'unmanaged') return '未纳管'
   if (view.kind === 'location') return SOURCE_LABEL[view.source]
   return SOURCE_LABEL[view.agent]
 }
@@ -57,20 +40,15 @@ export function ViewHeader({
   searchRef,
   refreshing,
   onRefresh,
-  onImport,
   onOpenLocation,
 }: ViewHeaderProps): ReactElement {
   const title = titleOf(view)
   const scoped = skills.filter((s) => skillInView(s, view))
 
   const pathLine =
-    view.kind === 'repository'
-      ? (info?.centralRoot ?? '…')
-      : view.kind === 'unmanaged'
-        ? `三个存储位置里尚未纳入中央仓库的 ${scoped.length} 个条目`
-        : view.kind === 'location'
-          ? (info?.sourceRoots[view.source] ?? '…')
-          : `合并读取 ${AGENT_SOURCES[view.agent].length} 个位置，共 ${scoped.length} 条 skill`
+    view.kind === 'location'
+      ? (info?.sourceRoots[view.source] ?? '…')
+      : `合并读取 ${AGENT_SOURCES[view.agent].length} 个位置，共 ${scoped.length} 条 skill`
 
   const modKey = info?.platform === 'darwin' ? '⌘K' : 'Ctrl K'
 
@@ -115,21 +93,20 @@ export function ViewHeader({
           <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
         </Button>
 
-        {view.kind !== 'unmanaged' && (
+        {/* 只有存储位置视图对应唯一目录，其余视图不提供「打开目录」 */}
+        {view.kind === 'location' && (
           <Button
             variant="outline"
             size="sm"
             static
             className="h-9 gap-1.5 px-3 text-sm"
-            onClick={onOpenLocation}
+            onClick={() => onOpenLocation(view.source)}
             title={pathLine}
           >
             <FolderOpen className="h-3.5 w-3.5" />
-            {view.kind === 'repository' ? '打开中央仓库' : '打开存储位置'}
+            打开存储位置
           </Button>
         )}
-
-        {view.kind === 'repository' && <ImportMenu onImport={onImport} />}
       </div>
     </div>
   )

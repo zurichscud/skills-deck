@@ -2,45 +2,35 @@ import { join } from 'node:path'
 
 import type {
   ActionResult,
-  AdoptAction,
-  AdoptAllResult,
   AppInfo,
   AppSettings,
-  FailResult,
-  ImportResult,
-  InstallFromGitResult,
   Skill,
   SkillSource,
-  UnmanagedSkill,
+  TrashItem,
 } from '@shared/types'
+import { SKILL_SOURCES } from '@shared/types'
 import { BrowserWindow, Tray, app, dialog, ipcMain, nativeImage, shell } from 'electron'
 
 import { currentSettings, loadSettings, saveSettings } from './config'
-import { ensureRepo, isGitAvailable, lastCommit } from './git'
-import { centralRoot, managedRoot, sourceRootFor } from './paths'
-import { scanUnmanaged } from './scanner'
+import { managedRoot, sourceRootFor, trashRoot } from './paths'
 import { skillStore } from './store'
 import { broadcastSkillsChanged, startWatcher } from './watcher'
 
+/** 渲染层传来的位置标识必须落在白名单里，避免索引越界 */
+function isSource(value: unknown): value is SkillSource {
+  return typeof value === 'string' && (SKILL_SOURCES as readonly string[]).includes(value)
+}
+
 export function registerIpc(): void {
-  ipcMain.handle('skills:info', async (): Promise<AppInfo> => {
-    const central = centralRoot()
-    const available = await isGitAvailable()
+  ipcMain.handle('skills:info', (): AppInfo => {
+    const sourceRoots = {} as Record<SkillSource, string>
+    for (const source of SKILL_SOURCES) sourceRoots[source] = sourceRootFor(source)
     return {
       platform: process.platform as AppInfo['platform'],
       version: app.getVersion(),
       managedRoot: managedRoot(),
-      centralRoot: central,
-      sourceRoots: {
-        claude: sourceRootFor('claude'),
-        codex: sourceRootFor('codex'),
-        opencode: sourceRootFor('opencode'),
-      },
-      git: {
-        available,
-        repoReady: available ? await ensureRepo(central) : false,
-        lastCommit: await lastCommit(central),
-      },
+      trashRoot: trashRoot(),
+      sourceRoots,
     }
   })
 
@@ -59,6 +49,7 @@ export function registerIpc(): void {
   ipcMain.handle(
     'skills:link',
     async (_e, skillId: string, source: SkillSource): Promise<ActionResult> => {
+      if (!isSource(source)) return { ok: false, code: 'IO', message: '未知的存储位置' }
       const result = await skillStore.link(skillId, source)
       if (result.ok) broadcastSkillsChanged()
       return result
@@ -68,35 +59,8 @@ export function registerIpc(): void {
   ipcMain.handle(
     'skills:unlink',
     async (_e, skillId: string, source: SkillSource): Promise<ActionResult> => {
+      if (!isSource(source)) return { ok: false, code: 'IO', message: '未知的存储位置' }
       const result = await skillStore.unlink(skillId, source)
-      if (result.ok) broadcastSkillsChanged()
-      return result
-    },
-  )
-
-  ipcMain.handle('skills:import', async (_e, path?: string): Promise<ImportResult> => {
-    let srcPath = path
-    if (!srcPath) {
-      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-      const picked = await dialog.showOpenDialog(win, {
-        title: '选择要导入中央仓库的 skill 目录',
-        message: '所选目录需包含 SKILL.md',
-        properties: ['openDirectory'],
-      })
-      if (picked.canceled || picked.filePaths.length === 0) {
-        return { ok: false, code: 'IO', message: '已取消' }
-      }
-      srcPath = picked.filePaths[0]
-    }
-    const result = await skillStore.importSkill(srcPath)
-    if (result.ok) broadcastSkillsChanged()
-    return result
-  })
-
-  ipcMain.handle(
-    'skills:installFromGit',
-    async (_e, url: string): Promise<InstallFromGitResult | FailResult> => {
-      const result = await skillStore.installFromGit(url)
       if (result.ok) broadcastSkillsChanged()
       return result
     },
@@ -112,17 +76,36 @@ export function registerIpc(): void {
     skillStore.revealInFinder(skillId),
   )
 
-  ipcMain.handle(
-    'skills:openPath',
-    async (_e, target: 'central' | SkillSource): Promise<ActionResult> => {
-      const path = target === 'central' ? centralRoot() : sourceRootFor(target)
-      const err = await shell.openPath(path)
-      if (err) return { ok: false, code: 'IO', message: err }
-      return { ok: true }
-    },
-  )
+  ipcMain.handle('skills:openPath', async (_e, target: SkillSource): Promise<ActionResult> => {
+    if (!isSource(target)) return { ok: false, code: 'IO', message: '未知的存储位置' }
+    const err = await shell.openPath(sourceRootFor(target))
+    if (err) return { ok: false, code: 'IO', message: err }
+    return { ok: true }
+  })
 
-  ipcMain.handle('settings:get', async (): Promise<AppSettings> => currentSettings())
+  ipcMain.handle('trash:list', (): Promise<TrashItem[]> => skillStore.trash())
+
+  ipcMain.handle('trash:restore', async (_e, itemId: string): Promise<ActionResult> => {
+    const result = await skillStore.restoreFromTrash(itemId)
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
+
+  ipcMain.handle('trash:purge', async (_e, itemId: string): Promise<ActionResult> => {
+    const result = await skillStore.purgeTrash(itemId)
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
+
+  ipcMain.handle('trash:empty', async (): Promise<ActionResult> => {
+    const result = await skillStore.emptyTrash()
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
+
+  ipcMain.handle('trash:reveal', (_e, itemId: string) => skillStore.revealTrashItem(itemId))
+
+  ipcMain.handle('settings:get', (): AppSettings => currentSettings())
 
   ipcMain.handle('settings:save', async (_e, next: AppSettings): Promise<ActionResult> => {
     try {
@@ -143,32 +126,6 @@ export function registerIpc(): void {
     })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
   })
-
-  ipcMain.handle('skills:unmanaged', (): Promise<UnmanagedSkill[]> => scanUnmanaged())
-
-  ipcMain.handle(
-    'skills:adoptUnmanaged',
-    async (_e, itemId: string, action: AdoptAction): Promise<ActionResult> => {
-      const result = await skillStore.adoptUnmanaged(itemId, action)
-      if (result.ok) broadcastSkillsChanged()
-      return result
-    },
-  )
-
-  ipcMain.handle('skills:adoptAllUnmanaged', async (): Promise<AdoptAllResult | FailResult> => {
-    const result = await skillStore.adoptAllUnmanaged()
-    if (result.ok) broadcastSkillsChanged()
-    return result
-  })
-
-  ipcMain.handle(
-    'skills:adoptManyUnmanaged',
-    async (_e, itemIds: string[]): Promise<AdoptAllResult | FailResult> => {
-      const result = await skillStore.adoptManyUnmanaged(itemIds)
-      if (result.ok) broadcastSkillsChanged()
-      return result
-    },
-  )
 
   void loadSettings().then(async () => {
     await skillStore.init()

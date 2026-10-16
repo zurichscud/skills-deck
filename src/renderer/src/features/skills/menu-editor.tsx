@@ -131,7 +131,7 @@ export interface MenuEditorProps {
 
 /**
  * 侧边栏菜单编辑器：组内拖拽排序 + 逐个显隐。
- * 只编辑可配置项（存储位置 / 工作区）；总览与中央仓库是常驻项，不出现在这里。
+ * 只编辑可配置项（存储位置 / 工作区）；总览、全部 Skill 与回收站是常驻项，不出现在这里。
  */
 export function MenuEditor({ menu, onChange }: MenuEditorProps): ReactElement {
   const ordered = useMemo(

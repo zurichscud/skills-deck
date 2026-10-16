@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import {
@@ -43,11 +43,14 @@ export const test = base.extend<Fixtures>({
       cwd: projectRoot,
       env: {
         ...process.env,
-        SKILLSDECK_CENTRAL_ROOT: sandbox.central,
         SKILLSDECK_SOURCE_ROOT_CLAUDE: sandbox.claude,
         SKILLSDECK_SOURCE_ROOT_CODEX: sandbox.codex,
         SKILLSDECK_SOURCE_ROOT_OPENCODE: sandbox.opencode,
+        SKILLSDECK_SOURCE_ROOT_AGENTS: sandbox.agents,
         SKILLSDECK_MANAGED_ROOT: sandbox.managed,
+        SKILLSDECK_TRASH_ROOT: sandbox.trash,
+        // 不显示窗口、不占 Dock：跑测试时不打扰正在用电脑的人
+        SKILLSDECK_HEADLESS: '1',
         ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
       },
     })
@@ -80,16 +83,39 @@ export const test = base.extend<Fixtures>({
     await expect(page.getByText('Skills Deck').first()).toBeVisible({ timeout: 30_000 })
     // 等首屏扫描结束（工具条不再显示「加载中…」）
     await expect(page.getByText('加载中…')).toHaveCount(0, { timeout: 15_000 })
+    // 装上「窗口有没有被显示过」的计数钩子，用例结束前核对，防止回归成弹窗打扰用户
+    await app.evaluate(({ BrowserWindow }) => {
+      const guard = globalThis as unknown as { skillsdeckShown?: number }
+      guard.skillsdeckShown = 0
+      const count = (): void => {
+        guard.skillsdeckShown = (guard.skillsdeckShown ?? 0) + 1
+      }
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (win.isVisible()) count()
+        win.on('show', count)
+      }
+    })
     await use(page)
+    const shown = await app.evaluate(
+      () => (globalThis as unknown as { skillsdeckShown?: number }).skillsdeckShown ?? 0,
+    )
+    expect(shown, 'E2E 期间不应有任何窗口被显示（SKILLSDECK_HEADLESS 失效了？）').toBe(0)
   },
 
   shot: async ({ page }, use) => {
     await use(async (name: string) => {
       await mkdir(artifactsDir, { recursive: true })
-      await page.screenshot({
-        path: join(artifactsDir, `${name}.png`),
-        fullPage: false,
-      })
+      // 直接抓渲染面（fromSurface: false）：不等 compositor 出帧，隐藏窗口也能拿到图
+      const session = await page.context().newCDPSession(page)
+      try {
+        const shot = await session.send('Page.captureScreenshot', {
+          format: 'png',
+          fromSurface: false,
+        })
+        await writeFile(join(artifactsDir, `${name}.png`), Buffer.from(shot.data, 'base64'))
+      } finally {
+        await session.detach().catch(() => undefined)
+      }
     })
   },
 })
@@ -98,7 +124,7 @@ export { expect }
 export type { ElectronApplication, Page }
 
 /**
- * 侧栏按钮：可访问名含右侧计数（如「中央仓库 0」），不能 exact 匹配。
+ * 侧栏按钮：可访问名含右侧计数（如「全部 Skill 0」），不能 exact 匹配。
  * 按分组 div（含 p 标题）过滤，消解「存储位置 / 工作区」同名项。
  */
 function sidebarGroup(page: Page, group: string): Locator {
@@ -118,19 +144,15 @@ export function navItem(page: Page, group: string, label: string): Locator {
 
 export async function openView(
   page: Page,
-  kind: 'dashboard' | 'repository' | 'unmanaged' | 'settings' | 'location' | 'workspace',
+  kind: 'dashboard' | 'trash' | 'settings' | 'location' | 'workspace',
   label?: string,
 ): Promise<void> {
   if (kind === 'dashboard') {
     await sidebarButton(page, '总览', '总览').click()
     return
   }
-  if (kind === 'repository') {
-    await sidebarButton(page, '总览', '中央仓库').click()
-    return
-  }
-  if (kind === 'unmanaged') {
-    await sidebarButton(page, '总览', '未纳管').click()
+  if (kind === 'trash') {
+    await sidebarButton(page, '总览', '回收站').click()
     return
   }
   if (kind === 'settings') {
@@ -159,9 +181,11 @@ export function rowByName(page: Page, name: string): Locator {
 
 /**
  * 应用启动后种子写入磁盘时，watcher 会刷新列表，
- * 但未纳管横幅只在 mount / 点击刷新时重拉——播种后统一点一次刷新。
+ * 但侧栏计数与回收站计数只在 mount / 点击刷新时重拉——播种后统一点一次刷新。
+ * 刷新按钮只在列表视图（存储位置 / 工作区）里，因此先落到一个固定的位置视图。
  */
 export async function refresh(page: Page): Promise<void> {
+  await openView(page, 'location', 'Claude Code')
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByText('加载中…')).toHaveCount(0, { timeout: 15_000 })
   // 给 watcher debounce + IPC 广播一点时间

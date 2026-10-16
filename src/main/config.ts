@@ -11,13 +11,12 @@ import {
   type SkillSource,
 } from '@shared/types'
 
-import { applyPathOverrides, centralRoot, managedRoot, sourceRootFor } from './paths'
+import { applyPathOverrides, managedRoot, sourceRootFor } from './paths'
 
 const CLOSE_BEHAVIORS: CloseBehavior[] = ['ask', 'tray', 'quit']
 const MENU_IDS = new Set<string>(MENU_ITEM_IDS)
 
 interface RawConfig {
-  centralRoot?: string
   sourceRoots?: Partial<Record<SkillSource, string>>
   closeBehavior?: CloseBehavior
   menu?: unknown
@@ -57,20 +56,22 @@ function normalizeMenu(raw: unknown): MenuPrefs {
   return { order: normalizeMenuIds(value.order), hidden: normalizeMenuIds(value.hidden) }
 }
 
+function defaultSourceRoots(): Record<SkillSource, string> {
+  const sourceRoots = {} as Record<SkillSource, string>
+  for (const s of SKILL_SOURCES) sourceRoots[s] = sourceRootFor(s)
+  return sourceRoots
+}
+
 function normalize(raw: RawConfig): AppSettings {
   const sourceRoots = {} as Record<SkillSource, string>
   for (const s of SKILL_SOURCES) {
     const v = raw.sourceRoots?.[s]
     sourceRoots[s] = typeof v === 'string' && v.trim() ? v.trim() : sourceRootFor(s)
   }
-  const central =
-    typeof raw.centralRoot === 'string' && raw.centralRoot.trim()
-      ? raw.centralRoot.trim()
-      : centralRoot()
   const closeBehavior = CLOSE_BEHAVIORS.includes(raw.closeBehavior as CloseBehavior)
     ? (raw.closeBehavior as CloseBehavior)
     : 'ask'
-  return { centralRoot: central, sourceRoots, closeBehavior, menu: normalizeMenu(raw.menu) }
+  return { sourceRoots, closeBehavior, menu: normalizeMenu(raw.menu) }
 }
 
 export async function loadSettings(): Promise<AppSettings> {
@@ -78,29 +79,19 @@ export async function loadSettings(): Promise<AppSettings> {
   // 先清空覆盖再求默认值，避免把上一次覆盖当成默认
   applyPathOverrides({ sourceRoots: {} })
   const effective = normalize(raw)
-  applyPathOverrides({ sourceRoots: effective.sourceRoots, centralRoot: effective.centralRoot })
+  applyPathOverrides({ sourceRoots: effective.sourceRoots })
   cache = effective
   return effective
 }
 
 export function currentSettings(): AppSettings {
   return (
-    cache ?? {
-      centralRoot: centralRoot(),
-      sourceRoots: {
-        claude: sourceRootFor('claude'),
-        codex: sourceRootFor('codex'),
-        opencode: sourceRootFor('opencode'),
-      },
-      closeBehavior: 'ask',
-      menu: { order: [], hidden: [] },
-    }
+    cache ?? { sourceRoots: defaultSourceRoots(), closeBehavior: 'ask', menu: normalizeMenu({}) }
   )
 }
 
 export async function saveSettings(next: AppSettings): Promise<void> {
   const raw: RawConfig = {
-    centralRoot: next.centralRoot,
     sourceRoots: { ...next.sourceRoots },
     closeBehavior: next.closeBehavior,
     menu: normalizeMenu(next.menu),

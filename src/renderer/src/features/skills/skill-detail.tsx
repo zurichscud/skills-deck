@@ -15,8 +15,6 @@ import {
   Folder,
   FolderOpen,
   Image,
-  Link2,
-  Link2Off,
   Terminal,
 } from 'lucide-react'
 import { type ReactElement, useMemo, useState } from 'react'
@@ -25,52 +23,52 @@ import { AgentIcon } from '@/components/agent-icons'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { isActive } from '@/hooks/use-skills'
 import { cn, formatBytes, formatRelativeTime } from '@/lib/utils'
 
 const FOCUS_RING =
   'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
+/** 这个 skill 的内容在哪：本体位置、应用之外，还是只剩残骸 */
 function StatusBadge({ skill }: { skill: Skill }): ReactElement {
-  if (skill.kind === 'builtin')
+  if (skill.kind === 'builtin') {
     return (
       <Badge variant="outline" className="text-2xs">
         内置
       </Badge>
     )
-  if (skill.kind === 'external') {
-    return skill.links[skill.origin as SkillSource]?.state === 'broken' ? (
+  }
+  if (skill.broken) {
+    return (
       <Badge variant="destructive" className="text-2xs">
-        失效
-      </Badge>
-    ) : (
-      <Badge variant="outline" className="border-warn/50 text-2xs text-warn">
-        未纳管
+        失效残骸
       </Badge>
     )
   }
-  if (isActive(skill))
+  if (skill.home === null) {
     return (
-      <Badge variant="outline" className="border-ok/40 text-2xs text-ok">
-        已启用
+      <Badge variant="secondary" className="text-2xs">
+        内容在应用之外
       </Badge>
     )
+  }
   return (
-    <Badge variant="secondary" className="text-2xs">
-      未启用
+    <Badge variant="outline" className="border-ok/40 text-2xs text-ok">
+      本体在 {SOURCE_LABEL[skill.home]}
     </Badge>
   )
 }
 
 const LINK_LABEL: Record<LinkState, string> = {
-  linked: '已启用',
-  absent: '未启用',
+  self: '本体',
+  linked: '已链接',
+  absent: '没有',
   broken: '失效软链',
   conflict: '被占用',
   native: '内置可用',
 }
 
 const LINK_STYLE: Record<LinkState, string> = {
+  self: 'text-ok',
   linked: 'text-ok',
   absent: 'text-muted-foreground',
   broken: 'text-warn',
@@ -80,7 +78,7 @@ const LINK_STYLE: Record<LinkState, string> = {
 
 function LinkRow({ skill, source }: { skill: Skill; source: SkillSource }): ReactElement | null {
   const link = skill.links[source]
-  if (skill.kind === 'external' && skill.origin !== source) return null
+  if (link.state === 'absent') return null
 
   return (
     <div className="flex items-start gap-2 py-1.5">
@@ -93,7 +91,7 @@ function LinkRow({ skill, source }: { skill: Skill; source: SkillSource }): Reac
         {link.path && (
           <p className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">{link.path}</p>
         )}
-        {link.target && link.state !== 'linked' && (
+        {link.target && link.state !== 'self' && link.state !== 'linked' && (
           <p className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">
             → {link.target}
           </p>
@@ -266,17 +264,14 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <p className="text-sm font-medium text-muted-foreground">未选择 skill</p>
         <p className="text-sm text-muted-foreground">
-          在列表中选择一项，这里会显示链接状态、路径、frontmatter 和文件。
+          在列表中选择一项，这里会显示它的路径、各位置的状态、frontmatter 和文件。
         </p>
       </div>
     )
   }
 
   const fmEntries = Object.entries(skill.frontmatter)
-  const brokenExternal =
-    skill.kind === 'external' &&
-    skill.origin !== null &&
-    skill.links[skill.origin].state === 'broken'
+  const positions = SKILL_SOURCES.filter((source) => skill.links[source].state !== 'absent')
 
   return (
     <ScrollArea className="h-full">
@@ -289,17 +284,10 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
             <StatusBadge skill={skill} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {skill.kind === 'central' && (
-              <Badge variant="outline" className="gap-1 text-2xs">
-                <Link2 className="h-3 w-3" />
-                中央仓库
-              </Badge>
-            )}
             {skill.kind === 'builtin' && <Badge variant="secondary">Codex 内置</Badge>}
-            {skill.kind === 'external' && (
-              <Badge variant="outline" className="gap-1 border-warn/50 text-2xs text-warn">
-                <Link2Off className="h-3 w-3" />
-                未纳管
+            {skill.broken && (
+              <Badge variant="outline" className="border-warn/50 text-2xs text-warn">
+                只剩失效软链
               </Badge>
             )}
           </div>
@@ -308,22 +296,22 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
           </p>
         </div>
 
-        {brokenExternal && (
+        {skill.broken && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
             <p className="flex items-center gap-1.5 text-xs font-medium text-destructive-text">
               <AlertTriangle className="h-3.5 w-3.5" />
-              符号链接失效
+              符号链接失效，没有内容可读，只能删除
             </p>
           </div>
         )}
 
-        {skill.kind !== 'external' && (
+        {positions.length > 0 && (
           <>
             <Separator />
             <div>
-              <h3 className="mb-1 text-2xs font-medium text-muted-foreground">启用状态</h3>
+              <h3 className="mb-1 text-2xs font-medium text-muted-foreground">各位置</h3>
               <div className="divide-y divide-border/50">
-                {SKILL_SOURCES.map((source) => (
+                {positions.map((source) => (
                   <LinkRow key={source} skill={skill} source={source} />
                 ))}
               </div>
@@ -335,7 +323,7 @@ export function SkillDetail({ skill }: SkillDetailProps): ReactElement {
 
         <div>
           <h3 className="mb-2 text-2xs font-medium text-muted-foreground">
-            {skill.kind === 'central' ? '真身路径' : '所在路径'}
+            {skill.broken ? '残骸路径' : '内容路径'}
           </h3>
           <dl className="space-y-1.5 text-2xs">
             <div>

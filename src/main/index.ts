@@ -4,8 +4,14 @@ import { BrowserWindow, app, shell } from 'electron'
 
 import { registerIpc, wireCloseBehavior } from './ipc'
 
+/**
+ * E2E 用：窗口创建后不显示，也不占 Dock，测试不会在别人屏幕上弹窗。
+ * 隐藏窗口会被 Chromium 当后台页面节流，因此同时关掉 backgroundThrottling。
+ */
+const HEADLESS = process.env['SKILLSDECK_HEADLESS'] === '1'
+
 function showWindow(win: BrowserWindow): void {
-  if (win.isDestroyed()) return
+  if (HEADLESS || win.isDestroyed()) return
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
@@ -30,10 +36,12 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      // 隐藏窗口默认被节流，会拖住渲染与动画；测试期间保持全速
+      backgroundThrottling: !HEADLESS,
     },
   })
 
-  win.on('ready-to-show', () => win.show())
+  if (!HEADLESS) win.on('ready-to-show', () => win.show())
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
@@ -51,6 +59,7 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
+  if (HEADLESS && process.platform === 'darwin') app.dock?.hide()
   registerIpc()
   createWindow()
 

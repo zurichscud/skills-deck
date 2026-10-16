@@ -1,13 +1,14 @@
 import {
   DEFAULT_MENU_PREFS,
   MENU_ITEM_IDS,
+  SKILL_SOURCES,
   SOURCE_LABEL,
   type MenuItemId,
   type MenuPrefs,
   type SkillSource,
 } from '@shared/types'
 
-import type { View } from '@/hooks/use-skills'
+import { AGENT_IDS, type View } from '@/hooks/use-skills'
 
 export type MenuGroup = 'overview' | 'location' | 'workspace'
 
@@ -30,8 +31,6 @@ export interface MenuItemDef {
   fixed?: boolean
 }
 
-const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
-
 /** 默认顺序即 MENU_ITEM_IDS 的声明顺序 */
 export const MENU_ITEMS: MenuItemDef[] = [
   {
@@ -42,32 +41,25 @@ export const MENU_ITEMS: MenuItemDef[] = [
     fixed: true,
   },
   {
-    id: 'repository',
+    id: 'trash',
     group: 'overview',
-    label: '中央仓库',
-    view: { kind: 'repository' },
+    label: '回收站',
+    view: { kind: 'trash' },
     fixed: true,
   },
-  {
-    id: 'unmanaged',
-    group: 'overview',
-    label: '未纳管',
-    view: { kind: 'unmanaged' },
-    fixed: true,
-  },
-  ...SOURCES.map<MenuItemDef>((s) => ({
+  ...SKILL_SOURCES.map<MenuItemDef>((s) => ({
     id: `location:${s}`,
     group: 'location',
     label: SOURCE_LABEL[s],
     view: { kind: 'location', source: s },
     source: s,
   })),
-  ...SOURCES.map<MenuItemDef>((s) => ({
-    id: `workspace:${s}`,
+  ...AGENT_IDS.map<MenuItemDef>((agent) => ({
+    id: `workspace:${agent}`,
     group: 'workspace',
-    label: SOURCE_LABEL[s],
-    view: { kind: 'workspace', agent: s },
-    source: s,
+    label: SOURCE_LABEL[agent],
+    view: { kind: 'workspace', agent },
+    source: agent,
   })),
 ]
 

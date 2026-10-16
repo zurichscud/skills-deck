@@ -1,5 +1,5 @@
 import { type MenuItemId, type MenuPrefs, type SkillSource } from '@shared/types'
-import { Inbox, LayoutDashboard, Moon, Package, Settings, Sun } from 'lucide-react'
+import { LayoutDashboard, Moon, Settings, Sun, Trash2 } from 'lucide-react'
 import { type ReactElement, type ReactNode } from 'react'
 
 import { AgentIcon } from '@/components/agent-icons'
@@ -104,14 +104,13 @@ export interface SidebarProps {
   onViewChange: (v: View) => void
   menu: MenuPrefs
   counts: {
+    /** 全部 skill（不含 codex 内置） */
     all: number
-    central: number
-    external: number
+    /** 各存储位置上出现的条目数（一个 skill 可出现在多个位置） */
     bySource: Record<SkillSource, number>
     byAgent: Record<AgentId, number>
-    linked: number
-    unlinked: number
-    builtin: number
+    /** 回收站里的条目数 */
+    trashCount: number
   }
 }
 
@@ -126,16 +125,14 @@ function isViewActive(current: View, target: View): boolean {
 
 function countFor(id: MenuItemId, counts: SidebarProps['counts']): number {
   if (id === 'dashboard') return counts.all
-  if (id === 'repository') return counts.central
-  if (id === 'unmanaged') return counts.external
-  const [kind, source] = id.split(':') as ['location' | 'workspace', SkillSource]
-  return kind === 'location' ? counts.bySource[source] : counts.byAgent[source]
+  if (id === 'trash') return counts.trashCount
+  const [kind, key] = id.split(':') as ['location' | 'workspace', string]
+  return kind === 'location' ? counts.bySource[key as SkillSource] : counts.byAgent[key as AgentId]
 }
 
 function iconFor(item: MenuItemDef): ReactNode {
   if (item.source) return <AgentIcon agent={item.source} className="h-3.5 w-3.5" />
-  if (item.id === 'repository') return <Package className="h-3.5 w-3.5" />
-  if (item.id === 'unmanaged') return <Inbox className="h-3.5 w-3.5" />
+  if (item.id === 'trash') return <Trash2 className="h-3.5 w-3.5" />
   return <LayoutDashboard className="h-3.5 w-3.5" />
 }
 

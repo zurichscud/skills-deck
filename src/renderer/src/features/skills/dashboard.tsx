@@ -1,151 +1,83 @@
-import { SOURCE_LABEL, type Skill, type SkillSource } from '@shared/types'
-import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Package, Sparkles } from 'lucide-react'
+import { SKILL_SOURCES, SOURCE_LABEL, type Skill, type SkillSource } from '@shared/types'
+import { AlertTriangle, ChevronRight, Trash2 } from 'lucide-react'
 import { type ReactElement } from 'react'
 
 import { AgentIcon } from '@/components/agent-icons'
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
+  AGENT_IDS,
   AGENT_SOURCES,
   isActive,
   linkedCount,
   skillInView,
   symlinkCount,
-  type AgentId,
   type View,
 } from '@/hooks/use-skills'
-import { formatBytes } from '@/lib/utils'
-import { cn } from '@/lib/utils'
-
-import { ImportMenu, type ImportMode } from './import-menu'
-
-const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
-const AGENTS: AgentId[] = ['claude', 'codex', 'opencode']
+import { cn, formatBytes } from '@/lib/utils'
 
 const FOCUS_RING =
   'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
+const ROW_CLASS = 'w-full border-b border-border text-left transition-colors hover:bg-accent/40'
+
 export interface DashboardProps {
   skills: Skill[]
   onJump: (view: View) => void
-  /** 导入入口：只写入中央仓库 */
-  onImport: (mode: ImportMode) => void
-  unmanaged: {
-    total: number
-    conflicts: number
-    busy: boolean
-    onOpen: () => void
-    onAdoptAll: () => void
-  } | null
+  /** 回收站里的条目数 */
+  trashCount: number
 }
 
-export function Dashboard({ skills, onJump, onImport, unmanaged }: DashboardProps): ReactElement {
-  const central = skills.filter((s) => s.kind === 'central')
+export function Dashboard({ skills, onJump, trashCount }: DashboardProps): ReactElement {
+  const realSkills = skills.filter((s) => s.kind === 'skill')
   const builtin = skills.filter((s) => s.kind === 'builtin')
-  const external = skills.filter((s) => s.kind === 'external')
-  const linked = central.filter(isActive)
-  const unlinked = central.filter((s) => !isActive(s))
-  const brokenLinks = central.filter((s) => SOURCES.some((src) => s.links[src].state === 'broken'))
-  const occupied = central.filter((s) => SOURCES.some((src) => s.links[src].state === 'conflict'))
-  const totalBytes = central.reduce((n, s) => n + s.byteSize, 0)
+  const linked = realSkills.filter(isActive)
+  const totalBytes = realSkills.reduce((n, s) => n + s.byteSize, 0)
+  /** 各存储位置上的条目合计（一个 skill 出现在多个位置时会被重复计入） */
+  const entryTotal = SKILL_SOURCES.reduce(
+    (n, src) => n + skills.filter((s) => skillInView(s, { kind: 'location', source: src })).length,
+    0,
+  )
+  const brokenLinks = realSkills.filter((s) =>
+    SKILL_SOURCES.some((src) => s.links[src].state === 'broken'),
+  )
+  const occupied = realSkills.filter((s) =>
+    SKILL_SOURCES.some((src) => s.links[src].state === 'conflict'),
+  )
 
   return (
     <ScrollArea className="h-full">
       <div className="flex max-w-5xl flex-col gap-7 p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">总览</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              中央仓库是唯一真身，各 agent 目录只放指向它的软链。
-            </p>
-          </div>
-          <ImportMenu onImport={onImport} />
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">总览</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            直接管理各存储位置里的 skill：链接会在勾选的位置建立软链，删除只是移入回收站。
+          </p>
         </div>
-
-        {unmanaged && (
-          <div className="flex items-center gap-3 rounded-md border border-primary/40 bg-primary/5 px-3.5 py-3">
-            <Sparkles className="h-4 w-4 shrink-0 text-foreground" />
-            <p className="min-w-0 flex-1 text-xs font-medium">
-              发现 {unmanaged.total} 个未纳入中央仓库的 skill
-            </p>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  static
-                  className="h-8 shrink-0 gap-1.5 text-xs"
-                  disabled={unmanaged.busy}
-                >
-                  {unmanaged.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  去处理
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 text-sm">
-                <DropdownMenuItem onSelect={() => unmanaged.onOpen()}>
-                  <div className="min-w-0">
-                    <p>由我决定</p>
-                    <p className="mt-0.5 text-2xs text-muted-foreground">
-                      逐个查看，自己选择处理方式
-                    </p>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={unmanaged.total - unmanaged.conflicts === 0}
-                  onSelect={() => unmanaged.onAdoptAll()}
-                >
-                  <div className="min-w-0">
-                    <p>一键导入</p>
-                    <p className="mt-0.5 text-2xs text-muted-foreground">
-                      {unmanaged.conflicts > 0
-                        ? `${unmanaged.total - unmanaged.conflicts} 个直接纳入，${unmanaged.conflicts} 个同名冲突留给你决定`
-                        : `全部 ${unmanaged.total} 个直接纳入中央仓库`}
-                    </p>
-                  </div>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        )}
 
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-end gap-3">
             <span className="text-hero font-semibold tracking-tight tabular-nums">
-              {central.length}
+              {realSkills.length}
             </span>
             <div className="pb-1 text-sm leading-tight text-muted-foreground">
-              <p>个 skill 在中央仓库</p>
+              <p>个 skill</p>
               <p className="font-mono text-xs">{formatBytes(totalBytes)}</p>
             </div>
           </div>
           <div className="flex gap-5 pb-1.5 text-xs text-muted-foreground">
             <span>
-              <span className="font-mono text-sm font-medium text-foreground">{linked.length}</span>{' '}
-              启用
+              <span className="font-mono text-sm font-medium text-foreground">{entryTotal}</span>{' '}
+              各位置合计
             </span>
             <span>
-              <span className="font-mono text-sm font-medium text-foreground">
-                {unlinked.length}
-              </span>{' '}
-              未启用
+              <span className="font-mono text-sm font-medium text-foreground">{linked.length}</span>{' '}
+              已链接
             </span>
             <span>
               <span className="font-mono text-sm font-medium text-foreground">
                 {builtin.length}
               </span>{' '}
               内置
-            </span>
-            <span>
-              <span className="font-mono text-sm font-medium text-foreground">
-                {external.length}
-              </span>{' '}
-              未纳管
             </span>
           </div>
         </div>
@@ -171,58 +103,28 @@ export function Dashboard({ skills, onJump, onImport, unmanaged }: DashboardProp
           <div className="rounded-md border border-warn/40 bg-warn/10 px-3.5 py-2.5">
             <p className="flex items-center gap-1.5 text-xs font-medium text-warn">
               <AlertTriangle className="h-3.5 w-3.5" />
-              {occupied.length} 个 skill 在某个存储位置被非纳管条目占用
+              {occupied.length} 个 skill 在某个存储位置被同名条目占用
             </p>
             <p className="mt-1 text-2xs text-muted-foreground">
-              这些位置不会自动覆盖；可在「未纳管的 skill」弹窗里逐个归集，或手动处理后重试。
+              应用不会覆盖别人的条目；可在该位置手动处理后重新链接。
             </p>
           </div>
         )}
 
         <div className="grid gap-x-10 gap-y-7 md:grid-cols-[3fr_2fr]">
           <section className="grid content-start gap-1">
-            <h2 className="pb-1 text-sm font-medium text-muted-foreground">中央仓库</h2>
-            <div className="border-t border-border">
-              <button
-                type="button"
-                onClick={() => onJump({ kind: 'repository' })}
-                className={cn(
-                  FOCUS_RING,
-                  'w-full border-b border-border py-3 text-left transition-colors hover:bg-accent/40',
-                )}
-              >
-                <div className="flex items-center gap-3 px-1">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-accent text-accent-foreground">
-                    <Package className="h-3 w-3" />
-                  </span>
-                  <span className="flex-1 truncate text-sm font-medium">全部 skill</span>
-                  <span className="font-mono text-base tabular-nums">{central.length}</span>
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                </div>
-                <p className="mt-2 px-1 text-2xs text-muted-foreground">
-                  {linked.length} 启用，{unlinked.length} 未启用，{formatBytes(totalBytes)}
-                </p>
-              </button>
-            </div>
-          </section>
-
-          <section className="grid content-start gap-1">
             <h2 className="pb-1 text-sm font-medium text-muted-foreground">存储位置</h2>
             <div className="border-t border-border">
-              {SOURCES.map((src) => {
+              {SKILL_SOURCES.map((src) => {
                 const here = skills.filter((s) => skillInView(s, { kind: 'location', source: src }))
                 const hereLinked = symlinkCount(skills, { kind: 'location', source: src })
-                const foreign = here.filter((s) => s.kind === 'external').length
                 const native = here.filter((s) => s.kind === 'builtin').length
                 return (
                   <button
                     key={src}
                     type="button"
                     onClick={() => onJump({ kind: 'location', source: src })}
-                    className={cn(
-                      FOCUS_RING,
-                      'w-full border-b border-border py-3 text-left transition-colors hover:bg-accent/40',
-                    )}
+                    className={cn(FOCUS_RING, ROW_CLASS, 'py-3')}
                   >
                     <div className="flex items-center gap-3 px-1">
                       <AgentIcon agent={src} className="h-5 w-5" />
@@ -233,9 +135,7 @@ export function Dashboard({ skills, onJump, onImport, unmanaged }: DashboardProp
                       <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     </div>
                     <p className="mt-2 px-1 text-2xs text-muted-foreground">
-                      {hereLinked} 条软链
-                      {native > 0 ? `，${native} 个内置` : ''}
-                      {foreign > 0 ? `，${foreign} 个未纳管` : ''}
+                      {hereLinked} 条软链{native > 0 ? `，${native} 个内置` : ''}
                     </p>
                   </button>
                 )
@@ -246,35 +146,25 @@ export function Dashboard({ skills, onJump, onImport, unmanaged }: DashboardProp
           <section className="grid content-start gap-1">
             <h2 className="pb-1 text-sm font-medium text-muted-foreground">工作区</h2>
             <div className="border-t border-border">
-              {AGENTS.map((agent) => {
+              {AGENT_IDS.map((agent) => {
                 const srcs = AGENT_SOURCES[agent]
                 const inView = skills.filter((s) => skillInView(s, { kind: 'workspace', agent }))
                 const available = linkedCount(skills, { kind: 'workspace', agent })
-                const foreign = skills.filter(
-                  (s) =>
-                    s.kind === 'external' &&
-                    s.origin !== null &&
-                    AGENT_SOURCES[agent].includes(s.origin),
-                ).length
                 return (
                   <button
                     key={agent}
                     type="button"
                     onClick={() => onJump({ kind: 'workspace', agent })}
-                    className={cn(
-                      FOCUS_RING,
-                      'flex w-full items-center gap-3 border-b border-border py-3 text-left transition-colors hover:bg-accent/40',
-                    )}
+                    className={cn(FOCUS_RING, ROW_CLASS, 'flex items-center gap-3 py-3')}
                   >
                     <AgentIcon agent={agent} className="h-5 w-5" />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">{SOURCE_LABEL[agent]}</p>
                       <p className="mt-0.5 text-2xs text-muted-foreground">
                         可用 {available} 个，读取 {srcs.length} 个位置
-                        {foreign > 0 ? `，另有 ${foreign} 个未纳管` : ''}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-2xs text-muted-foreground">
-                        {srcs.map((s) => (
+                        {srcs.map((s: SkillSource) => (
                           <span key={s} className="flex items-center gap-1">
                             <AgentIcon agent={s} className="h-3 w-3" />
                             {SOURCE_LABEL[s]}
@@ -287,6 +177,29 @@ export function Dashboard({ skills, onJump, onImport, unmanaged }: DashboardProp
                   </button>
                 )
               })}
+            </div>
+          </section>
+
+          <section className="grid content-start gap-1">
+            <h2 className="pb-1 text-sm font-medium text-muted-foreground">回收站</h2>
+            <div className="border-t border-border">
+              <button
+                type="button"
+                onClick={() => onJump({ kind: 'trash' })}
+                className={cn(FOCUS_RING, ROW_CLASS, 'py-3')}
+              >
+                <div className="flex items-center gap-3 px-1">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-accent text-accent-foreground">
+                    <Trash2 className="h-3 w-3" />
+                  </span>
+                  <span className="flex-1 truncate text-sm font-medium">回收站</span>
+                  <span className="font-mono text-base tabular-nums">{trashCount}</span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                </div>
+                <p className="mt-2 px-1 text-2xs text-muted-foreground">
+                  {trashCount > 0 ? '删除的条目都在这里，可以恢复到原位置' : '回收站是空的'}
+                </p>
+              </button>
             </div>
           </section>
         </div>

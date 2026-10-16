@@ -40,10 +40,6 @@
   --sidebar-ring: #c9284f;
   --ok: #146c33;
   --warn: #92400e;
-  /* brand tints: 图形/边框用途，按 3:1 校准 */
-  --source-claude: #c2410c;
-  --source-codex: #3b6fd4;
-  --source-opencode: #0d9b6c;
   --shadow-border:
     0px 0px 0px 1px oklch(0 0 0 / 0.06), 0px 1px 2px -1px oklch(0 0 0 / 0.06),
     0px 2px 4px 0px oklch(0 0 0 / 0.04);
@@ -85,9 +81,6 @@
   --sidebar-ring: #d63257;
   --ok: #4ade80;
   --warn: #fbbf24;
-  --source-claude: #e2855e;
-  --source-codex: #7aa1f5;
-  --source-opencode: #4bc49a;
   --shadow-border: 0 0 0 1px oklch(1 0 0 / 0.08);
   --shadow-border-hover: 0 0 0 1px oklch(1 0 0 / 0.13);
 }
@@ -124,9 +117,6 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
-  --color-source-claude: var(--source-claude);
-  --color-source-codex: var(--source-codex);
-  --color-source-opencode: var(--source-opencode);
   --shadow-border: var(--shadow-border);
   --shadow-border-hover: var(--shadow-border-hover);
   --radius-sm: calc(var(--radius) - 4px);
@@ -194,27 +184,6 @@
 }
 .dark .img-ring {
   outline: 1px solid oklch(1 0 0 / 0.1);
-}
-
-/* per-source link toggle tint (token-driven, no inline color-mix) */
-.link-toggle[data-linked='true'][data-source='claude'] {
-  color: var(--source-claude);
-  border-color: color-mix(in oklab, var(--source-claude) 45%, transparent);
-  background: color-mix(in oklab, var(--source-claude) 13%, transparent);
-}
-.link-toggle[data-linked='true'][data-source='codex'] {
-  color: var(--source-codex);
-  border-color: color-mix(in oklab, var(--source-codex) 45%, transparent);
-  background: color-mix(in oklab, var(--source-codex) 13%, transparent);
-}
-.link-toggle[data-linked='true'][data-source='opencode'] {
-  color: var(--source-opencode);
-  border-color: color-mix(in oklab, var(--source-opencode) 45%, transparent);
-  background: color-mix(in oklab, var(--source-opencode) 13%, transparent);
-}
-.link-toggle[data-state='broken'] {
-  color: var(--warn);
-  border-color: color-mix(in oklab, var(--warn) 45%, transparent);
 }
 
 /* 表格选中轨：逻辑起点，不挤压单元格内容 */

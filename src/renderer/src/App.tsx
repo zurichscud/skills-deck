@@ -1,39 +1,32 @@
 import {
   DEFAULT_MENU_PREFS,
+  SKILL_SOURCES,
   SOURCE_LABEL,
   type AppInfo,
   type AppSettings,
   type Skill,
   type SkillSource,
 } from '@shared/types'
-import { Link2, Link2Off, Package, Trash2, X } from 'lucide-react'
+import { Link2, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { toast, Toaster } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Separator } from '@/components/ui/separator'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Dashboard } from '@/features/skills/dashboard'
 import { DeleteDialog } from '@/features/skills/delete-dialog'
-import { InstallDialog } from '@/features/skills/install-dialog'
-import { MigrationDialog } from '@/features/skills/migration-dialog'
+import { LinkDialog } from '@/features/skills/link-dialog'
 import { SettingsPage } from '@/features/skills/settings-page'
 import { Sidebar, TitleBar } from '@/features/skills/sidebar'
 import { SkillDetail } from '@/features/skills/skill-detail'
 import { SkillTable } from '@/features/skills/skill-table'
+import { TrashPage } from '@/features/skills/trash-page'
 import { ViewHeader } from '@/features/skills/view-header'
 import {
-  AGENT_SOURCES,
+  AGENT_IDS,
   filterSkills,
-  isActive,
   isCodexView,
-  isLinkedInView,
   isListView,
   skillInView,
   useSkills,
@@ -45,14 +38,11 @@ import {
 
 type Theme = 'light' | 'dark'
 
+/** 状态筛选只剩「内置」这个维度；可用与否由行内图标表达 */
 const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: 'all', label: '全部' },
-  { key: 'linked', label: '启用' },
-  { key: 'unlinked', label: '未启用' },
   { key: 'builtin', label: '内置' },
 ]
-
-const SOURCES: SkillSource[] = ['claude', 'codex', 'opencode']
 
 /** 主题切换时抑制全局过渡，避免颜色一齐渐变造成「涂抹」 */
 function suppressThemeTransitions(): void {
@@ -78,7 +68,7 @@ function readStoredTheme(): Theme {
 export default function App(): ReactElement {
   const { skills, loading, reload, refresh } = useSkills()
 
-  const [view, setView] = useState<View>({ kind: 'repository' })
+  const [view, setView] = useState<View>({ kind: 'dashboard' })
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -86,56 +76,46 @@ export default function App(): ReactElement {
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(new Set())
   const [deleteTargets, setDeleteTargets] = useState<Skill[]>([])
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [linkTargets, setLinkTargets] = useState<Skill[]>([])
+  const [trashCount, setTrashCount] = useState(0)
   const [theme, setTheme] = useState<Theme>(readStoredTheme)
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [unmanaged, setUnmanaged] = useState<{ total: number; conflicts: number } | null>(null)
-  const [unmanagedOpen, setUnmanagedOpen] = useState(false)
-  const [adoptingAll, setAdoptingAll] = useState(false)
-  const [installOpen, setInstallOpen] = useState(false)
 
   const searchRef = useRef<HTMLInputElement>(null)
   const detailRef = useRef<HTMLElement>(null)
-  const themeRef = useRef<Theme>(readStoredTheme())
 
   const reloadInfo = useCallback(async (): Promise<void> => {
     setInfo(await window.api.info())
     setSettings(await window.api.getSettings())
   }, [])
 
-  const reloadUnmanaged = useCallback(async (): Promise<void> => {
+  const reloadTrash = useCallback(async (): Promise<void> => {
     try {
-      const items = await window.api.unmanaged()
-      setUnmanaged(
-        items.length > 0
-          ? { total: items.length, conflicts: items.filter((i) => i.conflict).length }
-          : null,
-      )
+      setTrashCount((await window.api.trash()).length)
     } catch {
-      setUnmanaged(null)
+      setTrashCount(0)
     }
   }, [])
 
   useEffect(() => {
     void window.api.info().then(setInfo)
     void window.api.getSettings().then(setSettings)
-    void window.api
-      .unmanaged()
-      .then((items) =>
-        setUnmanaged(
-          items.length > 0
-            ? { total: items.length, conflicts: items.filter((i) => i.conflict).length }
-            : null,
-        ),
-      )
-      .catch(() => setUnmanaged(null))
+    // 回收站的写操作同样会广播变更，这里保持条目数同步
+    const syncTrash = (): void => {
+      void window.api
+        .trash()
+        .then((items) => setTrashCount(items.length))
+        .catch(() => setTrashCount(0))
+    }
+    syncTrash()
+    return window.api.onChanged(syncTrash)
   }, [])
 
   useEffect(() => {
     suppressThemeTransitions()
     document.documentElement.classList.toggle('dark', theme === 'dark')
-    themeRef.current = theme
     try {
       localStorage.setItem('skillsdeck.theme', theme)
     } catch {
@@ -164,26 +144,17 @@ export default function App(): ReactElement {
   )
 
   const counts = useMemo(() => {
-    const central = skills.filter((s) => s.kind === 'central')
-    const bySource = { claude: 0, codex: 0, opencode: 0 } as Record<SkillSource, number>
-    for (const source of SOURCES) {
+    const realSkills = skills.filter((s) => s.kind === 'skill')
+    const bySource = {} as Record<SkillSource, number>
+    for (const source of SKILL_SOURCES) {
       bySource[source] = skills.filter((s) => skillInView(s, { kind: 'location', source })).length
     }
-    const byAgent = { claude: 0, codex: 0, opencode: 0 } as Record<AgentId, number>
-    for (const agent of Object.keys(AGENT_SOURCES) as AgentId[]) {
+    const byAgent = {} as Record<AgentId, number>
+    for (const agent of AGENT_IDS) {
       byAgent[agent] = skills.filter((s) => skillInView(s, { kind: 'workspace', agent })).length
     }
-    return {
-      all: skills.length,
-      central: central.length,
-      external: skills.filter((s) => skillInView(s, { kind: 'unmanaged' })).length,
-      bySource,
-      byAgent,
-      linked: central.filter(isActive).length,
-      unlinked: central.filter((s) => !isActive(s)).length,
-      builtin: skills.filter((s) => s.kind === 'builtin').length,
-    }
-  }, [skills])
+    return { all: realSkills.length, bySource, byAgent, trashCount }
+  }, [skills, trashCount])
 
   const selected = useMemo(
     () => skills.find((s) => s.id === selectedId) ?? null,
@@ -193,11 +164,8 @@ export default function App(): ReactElement {
   /** 各状态筛选按钮角标：视图 + 搜索词范围内计数，不随当前 status 变化 */
   const statusCounts = useMemo(() => {
     const base = isListView(view) ? filterSkills(skills, query, view, 'all') : []
-    const noBuiltin = base.filter((s) => s.kind !== 'builtin')
     return {
       all: base.length,
-      linked: noBuiltin.filter((s) => isLinkedInView(s, view)).length,
-      unlinked: noBuiltin.filter((s) => !isLinkedInView(s, view)).length,
       builtin: base.filter((s) => s.kind === 'builtin').length,
     } as Record<StatusFilter, number>
   }, [skills, query, view])
@@ -213,117 +181,6 @@ export default function App(): ReactElement {
     })
   }, [])
 
-  const toggleLink = useCallback(
-    async (skill: Skill, source: SkillSource, next: boolean): Promise<void> => {
-      markPending([skill.id], true)
-      const result = next
-        ? await window.api.link(skill.id, source)
-        : await window.api.unlink(skill.id, source)
-      markPending([skill.id], false)
-      if (result.ok) {
-        toast.success(`${skill.name} 已${next ? '链接到' : '取消链接'} ${SOURCE_LABEL[source]}`)
-      } else {
-        toast.error(`${skill.name}：${result.message}`)
-      }
-      await reload()
-    },
-    [markPending, reload],
-  )
-
-  const batchLink = useCallback(
-    async (source: SkillSource, next: boolean): Promise<void> => {
-      const targets = skills.filter((s) => checkedIds.has(s.id) && s.kind === 'central')
-      if (targets.length === 0) {
-        toast.info('所选条目中没有可链接的 skill')
-        return
-      }
-      markPending(
-        targets.map((s) => s.id),
-        true,
-      )
-      let okCount = 0
-      const errors: string[] = []
-      for (const s of targets) {
-        const r = next ? await window.api.link(s.id, source) : await window.api.unlink(s.id, source)
-        if (r.ok) okCount += 1
-        else errors.push(`${s.name}: ${r.message}`)
-      }
-      markPending(
-        targets.map((s) => s.id),
-        false,
-      )
-      if (okCount > 0) {
-        toast.success(
-          `${okCount} 个 skill 已${next ? '链接到' : '取消链接'} ${SOURCE_LABEL[source]}`,
-        )
-      }
-      if (errors.length > 0) toast.error(errors.slice(0, 3).join('\n'))
-      setCheckedIds(new Set())
-      await reload()
-    },
-    [skills, checkedIds, markPending, reload],
-  )
-
-  const doImport = useCallback(
-    async (skill?: Skill): Promise<void> => {
-      const result = await window.api.importSkill(skill?.dirPath)
-      if (result.ok) toast.success(`已导入中央仓库：${result.name}`)
-      else if (result.message !== '已取消') toast.error(result.message)
-      await reload()
-      await reloadUnmanaged()
-    },
-    [reload, reloadUnmanaged],
-  )
-
-  /** 一键导入：无冲突的直接纳入，同名冲突留给用户逐个决定 */
-  const doAdoptAll = useCallback(async (): Promise<void> => {
-    setAdoptingAll(true)
-    try {
-      const result = await window.api.adoptAllUnmanaged()
-      if (!result.ok) {
-        toast.error(result.message)
-        return
-      }
-      if (result.adopted > 0) toast.success(`已纳入中央仓库 ${result.adopted} 个 skill`)
-      if (result.failed > 0) toast.error(`${result.failed} 个条目纳入失败，请逐个处理`)
-      if (result.conflicts > 0) {
-        toast.info(`${result.conflicts} 个同名冲突需要你决定`)
-        setUnmanagedOpen(true)
-      }
-      await reload()
-      await reloadUnmanaged()
-    } finally {
-      setAdoptingAll(false)
-    }
-  }, [reload, reloadUnmanaged])
-
-  /** 选中若干未纳管条目后批量纳入中央仓库 */
-  const doAdoptSelected = useCallback(
-    async (targets: Skill[]): Promise<void> => {
-      if (targets.length === 0) return
-      setAdoptingAll(true)
-      try {
-        const result = await window.api.adoptManyUnmanaged(targets.map((s) => s.id))
-        if (!result.ok) {
-          toast.error(result.message)
-          return
-        }
-        if (result.adopted > 0) toast.success(`已纳入中央仓库 ${result.adopted} 个 skill`)
-        if (result.failed > 0) toast.error(`${result.failed} 个条目纳入失败，请逐个处理`)
-        if (result.conflicts > 0) {
-          toast.info(`${result.conflicts} 个同名冲突需要你决定`)
-          setUnmanagedOpen(true)
-        }
-        setCheckedIds(new Set())
-        await reload()
-        await reloadUnmanaged()
-      } finally {
-        setAdoptingAll(false)
-      }
-    },
-    [reload, reloadUnmanaged],
-  )
-
   const reveal = useCallback(async (skill: Skill): Promise<void> => {
     try {
       await window.api.revealInFinder(skill.id)
@@ -332,9 +189,9 @@ export default function App(): ReactElement {
     }
   }, [])
 
-  const openPath = useCallback(async (target: 'central' | SkillSource): Promise<void> => {
-    const result = await window.api.openPath(target)
-    if (!result.ok) toast.error(result.message)
+  const openLocation = useCallback(async (source: SkillSource): Promise<void> => {
+    const result = await window.api.openPath(source)
+    if (!result.ok) toast.error(`${SOURCE_LABEL[source]}：${result.message}`)
   }, [])
 
   const doRefresh = useCallback(async (): Promise<void> => {
@@ -342,16 +199,22 @@ export default function App(): ReactElement {
     try {
       await refresh()
       await reloadInfo()
-      await reloadUnmanaged()
+      await reloadTrash()
       toast.success('已重新扫描')
     } finally {
       setRefreshing(false)
     }
-  }, [refresh, reloadInfo, reloadUnmanaged])
+  }, [refresh, reloadInfo, reloadTrash])
 
+  /** 删除 = 把该 skill 在各存储位置的条目一起移入回收站 */
   const doDelete = useCallback(
     async (targets: Skill[]): Promise<void> => {
+      if (targets.length === 0) return
       setDeleteBusy(true)
+      markPending(
+        targets.map((s) => s.id),
+        true,
+      )
       let okCount = 0
       const errors: string[] = []
       for (const skill of targets) {
@@ -359,8 +222,12 @@ export default function App(): ReactElement {
         if (result.ok) okCount += 1
         else errors.push(`${skill.name}：${result.message}`)
       }
+      markPending(
+        targets.map((s) => s.id),
+        false,
+      )
       setDeleteBusy(false)
-      if (okCount > 0) toast.success(`已永久删除 ${okCount} 个 skill`)
+      if (okCount > 0) toast.success(`已移入回收站：${okCount} 个 skill`)
       if (errors.length > 0) toast.error(errors.slice(0, 3).join('\n'))
       if (selectedId !== null && targets.some((s) => s.id === selectedId)) setSelectedId(null)
       setCheckedIds((prev) => {
@@ -370,9 +237,9 @@ export default function App(): ReactElement {
       })
       setDeleteTargets([])
       await reload()
-      await reloadUnmanaged()
+      await reloadTrash()
     },
-    [reload, reloadUnmanaged, selectedId],
+    [markPending, reload, reloadTrash, selectedId],
   )
 
   /** 设置页自动保存：成功静默，失败提示 */
@@ -383,13 +250,12 @@ export default function App(): ReactElement {
         setSettings(next)
         await reloadInfo()
         await reload()
-        await reloadUnmanaged()
         return true
       }
       toast.error(result.message)
       return false
     },
-    [reload, reloadInfo, reloadUnmanaged],
+    [reload, reloadInfo],
   )
 
   /** 切换菜单：清空搜索词、状态筛选与选中项，避免带着上一个视图的上下文进入新视图 */
@@ -426,14 +292,27 @@ export default function App(): ReactElement {
     [skills, checkedIds, listView],
   )
 
-  // 「内置」仅 Codex 视图可用（内置 skill 只来自 codex/.system）；未纳管视图里全是未纳管条目，不需要状态筛选
+  /** 勾选项里可操作的条目：内置 skill 既不能链接也不能删除，只能查看 */
+  const actionableChecked = useMemo(
+    () => checkedInView.filter((s) => s.kind === 'skill'),
+    [checkedInView],
+  )
+  const builtinChecked = checkedInView.length - actionableChecked.length
+
+  /** 打开链接对话框：只对可链接的 skill 生效 */
+  const openLinkDialog = useCallback((targets: Skill[]): void => {
+    setLinkTargets(targets.filter((s) => s.kind === 'skill'))
+  }, [])
+
+  /** 回收站里的条目变化后：刷新列表与回收站计数 */
+  const afterChange = useCallback((): void => {
+    void reload()
+    void reloadTrash()
+  }, [reload, reloadTrash])
+
+  // 「内置」只来自 codex/.system，该筛选仅在 Codex 视图显示
   const statusTabs = useMemo(
-    () =>
-      view.kind === 'unmanaged'
-        ? []
-        : isCodexView(view)
-          ? STATUS_TABS
-          : STATUS_TABS.filter((t) => t.key !== 'builtin'),
+    () => (isCodexView(view) ? STATUS_TABS : STATUS_TABS.filter((t) => t.key !== 'builtin')),
     [view],
   )
 
@@ -471,30 +350,11 @@ export default function App(): ReactElement {
 
           <main className="flex min-w-0 flex-1 flex-col">
             {isDashboard ? (
-              <Dashboard
-                skills={skills}
-                onJump={changeView}
-                onImport={(mode) => (mode === 'local' ? void doImport() : setInstallOpen(true))}
-                unmanaged={
-                  unmanaged
-                    ? {
-                        total: unmanaged.total,
-                        conflicts: unmanaged.conflicts,
-                        busy: adoptingAll,
-                        onOpen: () => setUnmanagedOpen(true),
-                        onAdoptAll: () => void doAdoptAll(),
-                      }
-                    : null
-                }
-              />
+              <Dashboard skills={skills} onJump={changeView} trashCount={trashCount} />
+            ) : view.kind === 'trash' ? (
+              <TrashPage onChanged={afterChange} />
             ) : isSettings ? (
-              <SettingsPage
-                onSave={saveSettings}
-                version={info?.version}
-                info={info}
-                unmanaged={unmanaged}
-                onOpenUnmanaged={() => setUnmanagedOpen(true)}
-              />
+              <SettingsPage onSave={saveSettings} version={info?.version} info={info} />
             ) : listView ? (
               <>
                 <ViewHeader
@@ -506,17 +366,7 @@ export default function App(): ReactElement {
                   searchRef={searchRef}
                   refreshing={refreshing}
                   onRefresh={() => void doRefresh()}
-                  onImport={(mode) => (mode === 'local' ? void doImport() : setInstallOpen(true))}
-                  onOpenLocation={() => {
-                    if (listView.kind === 'unmanaged') return
-                    void openPath(
-                      listView.kind === 'repository'
-                        ? 'central'
-                        : listView.kind === 'location'
-                          ? listView.source
-                          : listView.agent,
-                    )
-                  }}
+                  onOpenLocation={(source) => void openLocation(source)}
                 />
 
                 {/* 固定高度工具条：始终占位，避免操作按钮出现/消失引起表格抖动 */}
@@ -526,87 +376,36 @@ export default function App(): ReactElement {
                       <span className="text-xs text-muted-foreground">
                         已选 <span className="font-mono tabular-nums">{checkedIds.size}</span> 项
                       </span>
+                      {builtinChecked > 0 && (
+                        <span className="text-2xs text-muted-foreground">
+                          （其中 {builtinChecked} 个内置不可操作）
+                        </span>
+                      )}
                       <Separator orientation="vertical" className="h-4" />
                       <div className="ms-auto flex items-center gap-2">
-                        {/* 未纳管条目无法直接链接，该视图只提供「纳入管理 / 删除」 */}
-                        {listView.kind === 'unmanaged' ? (
-                          <>
-                            <Button
-                              size="sm"
-                              static
-                              className="h-7 gap-1.5 text-xs"
-                              disabled={adoptingAll}
-                              onClick={() => void doAdoptSelected(checkedInView)}
-                            >
-                              <Package className="h-3.5 w-3.5" />
-                              纳入管理
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              static
-                              className="h-7 gap-1.5 border-destructive/40 text-xs text-destructive-text hover:bg-destructive/10 hover:text-destructive-text"
-                              onClick={() => setDeleteTargets(checkedInView)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              删除
-                            </Button>
-                            <Separator orientation="vertical" className="h-4" />
-                          </>
-                        ) : (
-                          <>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  static
-                                  className="h-7 gap-1.5 border-ok/40 text-xs text-ok hover:bg-ok/10 hover:text-ok"
-                                >
-                                  <Link2 className="h-3.5 w-3.5" />
-                                  链接到…
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="text-sm">
-                                {SOURCES.map((source) => (
-                                  <DropdownMenuItem
-                                    key={source}
-                                    onSelect={() => void batchLink(source, true)}
-                                  >
-                                    链接到 {SOURCE_LABEL[source]}
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  static
-                                  className="h-7 gap-1.5 text-xs text-muted-foreground"
-                                >
-                                  <Link2Off className="h-3.5 w-3.5" />
-                                  取消链接
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="text-sm">
-                                {SOURCES.map((source) => (
-                                  <DropdownMenuItem
-                                    key={source}
-                                    onSelect={() => void batchLink(source, false)}
-                                  >
-                                    取消 {SOURCE_LABEL[source]} 的链接
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-
-                            <Separator orientation="vertical" className="h-4" />
-                          </>
-                        )}
-
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          static
+                          className="h-7 gap-1.5 border-ok/40 text-xs text-ok hover:bg-ok/10 hover:text-ok"
+                          disabled={actionableChecked.length === 0}
+                          onClick={() => openLinkDialog(actionableChecked)}
+                        >
+                          <Link2 className="h-3.5 w-3.5" />
+                          链接…
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          static
+                          className="h-7 gap-1.5 border-destructive/40 text-xs text-destructive-text hover:bg-destructive/10 hover:text-destructive-text"
+                          disabled={actionableChecked.length === 0}
+                          onClick={() => setDeleteTargets(actionableChecked)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          删除
+                        </Button>
+                        <Separator orientation="vertical" className="h-4" />
                         <Button
                           size="sm"
                           variant="ghost"
@@ -648,7 +447,6 @@ export default function App(): ReactElement {
                 <div className="min-h-0 flex-1">
                   <SkillTable
                     skills={visible}
-                    view={listView}
                     loading={loading}
                     filtered={query.trim() !== '' || status !== 'all'}
                     selectedId={selectedId}
@@ -658,8 +456,7 @@ export default function App(): ReactElement {
                     onToggleAll={toggleAll}
                     allChecked={allChecked}
                     onSelect={(s) => setSelectedId(s.id)}
-                    onToggleLink={(s, source, next) => void toggleLink(s, source, next)}
-                    onAdopt={() => setUnmanagedOpen(true)}
+                    onLink={(s) => openLinkDialog([s])}
                     onReveal={(s) => void reveal(s)}
                     onDelete={(s) => setDeleteTargets([s])}
                   />
@@ -678,12 +475,13 @@ export default function App(): ReactElement {
           )}
         </div>
 
-        <MigrationDialog
-          open={unmanagedOpen}
-          onClose={() => setUnmanagedOpen(false)}
+        <LinkDialog
+          open={linkTargets.length > 0}
+          skills={linkTargets}
+          onClose={() => setLinkTargets([])}
           onChanged={() => {
-            void reloadUnmanaged()
-            void reload()
+            setCheckedIds(new Set())
+            afterChange()
           }}
         />
 
@@ -692,15 +490,6 @@ export default function App(): ReactElement {
           busy={deleteBusy}
           onClose={() => setDeleteTargets([])}
           onConfirm={(targets) => void doDelete(targets)}
-        />
-
-        <InstallDialog
-          open={installOpen}
-          onClose={() => setInstallOpen(false)}
-          onChanged={() => {
-            void reload()
-            void reloadUnmanaged()
-          }}
         />
 
         <Toaster theme={theme} richColors closeButton position="bottom-right" />

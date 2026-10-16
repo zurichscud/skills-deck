@@ -1,19 +1,22 @@
 import { SKILL_SOURCES, type LinkState, type Skill, type SkillSource } from '@shared/types'
 import { useCallback, useEffect, useState } from 'react'
 
-export type AgentId = SkillSource
+/** 应用管理的 agent；与存储位置解耦（agents 位置不对应任何 agent 工作区） */
+export type AgentId = 'claude' | 'codex' | 'opencode'
+
+export const AGENT_IDS = ['claude', 'codex', 'opencode'] as const satisfies readonly AgentId[]
 
 export type View =
   | { kind: 'dashboard' }
-  | { kind: 'repository' }
-  | { kind: 'unmanaged' }
+  | { kind: 'trash' }
   | { kind: 'location'; source: SkillSource }
   | { kind: 'workspace'; agent: AgentId }
   | { kind: 'settings' }
 
-export type StatusFilter = 'all' | 'linked' | 'unlinked' | 'builtin'
+/** 列表状态筛选：只剩「内置」这一个维度，可用与否由行内图标表达 */
+export type StatusFilter = 'all' | 'builtin'
 
-/** Agent → 它实际读取的存储位置；opencode 合并三个位置，其余 1:1 */
+/** Agent → 它实际读取的存储位置；opencode 合并读取三个位置 */
 export const AGENT_SOURCES: Record<AgentId, SkillSource[]> = {
   claude: ['claude'],
   codex: ['codex'],
@@ -27,120 +30,71 @@ export function isCodexView(view: View): boolean {
   return false
 }
 
-/** 列表视图（非 dashboard / settings） */
-export type ListView = Extract<
-  View,
-  { kind: 'repository' | 'unmanaged' | 'location' | 'workspace' }
->
+/** 列表视图（非 dashboard / trash / settings） */
+export type ListView = Extract<View, { kind: 'location' | 'workspace' }>
 
 export function isListView(view: View): view is ListView {
-  return (
-    view.kind === 'repository' ||
-    view.kind === 'unmanaged' ||
-    view.kind === 'location' ||
-    view.kind === 'workspace'
-  )
+  return view.kind === 'location' || view.kind === 'workspace'
 }
 
-/** 该 skill 是否在指定存储位置可用（链接生效或内置天然可用） */
+/** 该位置上有这个 skill 的条目（本体、有效链接、待替换残骸或他人占位） */
+function hasEntry(state: LinkState): boolean {
+  return state === 'self' || state === 'linked' || state === 'broken' || state === 'conflict'
+}
+
+/** 该位置上这个 skill 能用：本体就在这里、链接生效，或 codex 内置 */
 function availableAt(skill: Skill, source: SkillSource): boolean {
   const state = skill.links[source].state
-  return state === 'linked' || state === 'native'
+  return state === 'self' || state === 'linked' || state === 'native'
 }
 
-/** 是否至少链接到一个存储位置 */
+/** 是否至少在一个存储位置可用 */
 export function isActive(skill: Skill): boolean {
   if (skill.kind === 'builtin') return true
   return SKILL_SOURCES.some((s) => availableAt(skill, s))
 }
 
+/** 视图覆盖的位置：location 一个，workspace 看 agent 的读取范围，其余为全部位置 */
+function sourcesFor(view: View): SkillSource[] {
+  if (view.kind === 'location') return [view.source]
+  if (view.kind === 'workspace') return AGENT_SOURCES[view.agent]
+  return [...SKILL_SOURCES]
+}
+
 /**
  * skill 是否出现在指定视图中。
- * - 中央仓库：只看真身
- * - 未纳管：只看三个存储位置里没指向中央仓库真身的条目
- * - 存储位置：该位置的启用清单——全部候选真身（含尚未链接的）+ 未纳管条目 + codex 内置
- * - 工作区：该 agent 读取范围内的一切——全部候选真身 + 相关未纳管条目 + codex 内置
+ * - location：该位置上有条目（本体 / 链接 / 残骸 / 被占用）的 skill；codex 视图额外含内置
+ * - workspace：该 agent 读取范围里任位置有条目的 skill；codex 视图额外含内置
  */
 export function skillInView(skill: Skill, view: View): boolean {
-  if (view.kind === 'repository') return skill.kind === 'central'
-  if (view.kind === 'unmanaged') {
-    // 与「未纳管的 Skill」弹窗同一口径：断链残骸没有内容可纳入，不列入
-    if (skill.kind !== 'external' || skill.origin === null) return false
-    return skill.links[skill.origin].state !== 'broken'
-  }
-
   if (view.kind === 'location') {
-    if (skill.kind === 'central') return true
-    return skill.origin === view.source
+    if (skill.kind === 'builtin') return view.source === 'codex'
+    return hasEntry(skill.links[view.source].state)
   }
-
   if (view.kind === 'workspace') {
     if (skill.kind === 'builtin') return view.agent === 'codex'
-    if (skill.kind === 'external') {
-      return skill.origin !== null && AGENT_SOURCES[view.agent].includes(skill.origin)
-    }
-    return true
+    return AGENT_SOURCES[view.agent].some((s) => hasEntry(skill.links[s].state))
   }
-
   return true
 }
 
-/** 在指定视图下「已启用」的判定 */
+/** 在指定视图下「可用」的判定（本体在此、链接生效，内置天然可用） */
 export function isLinkedInView(skill: Skill, view: View): boolean {
   if (skill.kind === 'builtin') return true
-  // 本地条目（未纳管）就放在 agent 读取的目录里，agent 直接读取，天然可用
-  if (skill.kind === 'external') return localSourceInView(skill, view) !== null
-  if (view.kind === 'location') return availableAt(skill, view.source)
-  if (view.kind === 'workspace') {
-    return AGENT_SOURCES[view.agent].some((s) => availableAt(skill, s))
-  }
-  return isActive(skill)
+  return sourcesFor(view).some((s) => availableAt(skill, s))
 }
 
-/**
- * 该未纳管条目是否「本地」于这个视图：内容就放在该 agent 读取的位置里。
- * 返回它所在的位置，不属于这个视图时返回 null。
- */
-export function localSourceInView(skill: Skill, view: View): SkillSource | null {
-  if (skill.kind !== 'external' || skill.origin === null) return null
-  if (view.kind === 'location') return view.source === skill.origin ? skill.origin : null
-  if (view.kind === 'workspace') {
-    return AGENT_SOURCES[view.agent].includes(skill.origin) ? skill.origin : null
-  }
-  return null
-}
-
-/**
- * 该视图用「单一启用位置」的开关呈现时返回那个位置，否则返回 null（用多位置图标区分）。
- * 存储位置视图天然只有一个位置；工作区只有读取单一位置的 agent（Claude Code / Codex）适用。
- */
-export function switchSourceFor(view: ListView): SkillSource | null {
-  if (view.kind === 'location') return view.source
-  if (view.kind === 'workspace') {
-    const sources = AGENT_SOURCES[view.agent]
-    return sources.length === 1 ? sources[0] : null
-  }
-  return null
-}
-
-/** 视图下「已启用」的条目数（内置不计，与状态筛选 tab 的口径一致） */
+/** 视图下「可用」的条目数（内置天然可用，不计，与列表状态筛选口径一致） */
 export function linkedCount(skills: Skill[], view: ListView): number {
   return skills.filter((s) => s.kind !== 'builtin' && isLinkedInView(s, view)).length
 }
 
-/** 视图下真正的软链条数（中央仓库真身在别处的链接，不含本地条目与内置） */
+/** 视图下由软链接入的条目数（本体就在此位置的、内置都不计） */
 export function symlinkCount(skills: Skill[], view: ListView): number {
-  return skills.filter((s) => s.kind === 'central' && isLinkedInView(s, view)).length
-}
-
-/** 该视图中需要展示开关的存储位置 */
-export function linkTargetsFor(skill: Skill, view: View): SkillSource[] {
-  // 本地条目只存在于自己所在的位置
-  if (skill.kind === 'external') return skill.origin ? [skill.origin] : []
-  if (skill.kind === 'builtin') return ['codex']
-  if (view.kind === 'location') return [view.source]
-  if (view.kind === 'workspace') return AGENT_SOURCES[view.agent]
-  return [...SKILL_SOURCES]
+  const sources = sourcesFor(view)
+  return skills.filter(
+    (s) => s.kind === 'skill' && sources.some((src) => s.links[src].state === 'linked'),
+  ).length
 }
 
 export function linkStateOf(skill: Skill, source: SkillSource): LinkState {
@@ -156,10 +110,7 @@ export function filterSkills(
   const q = query.trim().toLowerCase()
   return skills.filter((s) => {
     if (!skillInView(s, view)) return false
-    const builtin = s.kind === 'builtin'
-    if (status === 'builtin' && !builtin) return false
-    if (status === 'linked' && (builtin || !isLinkedInView(s, view))) return false
-    if (status === 'unlinked' && (builtin || isLinkedInView(s, view))) return false
+    if (status === 'builtin' && s.kind !== 'builtin') return false
     if (!q) return true
     return s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
   })

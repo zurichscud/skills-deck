@@ -1,41 +1,43 @@
-export type SkillSource = 'claude' | 'codex' | 'opencode'
+export type SkillSource = 'claude' | 'codex' | 'opencode' | 'agents'
 
 export const SKILL_SOURCES = [
   'claude',
   'codex',
   'opencode',
+  'agents',
 ] as const satisfies readonly SkillSource[]
 
 export const SOURCE_LABEL: Record<SkillSource, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   opencode: 'opencode',
+  agents: 'Agents',
 }
 
 export type SkillFileKind = 'md' | 'script' | 'asset' | 'other'
 
 /**
- * - central:  中央仓库里的真身（唯一可链接的条目）
- * - builtin:  codex `.system` 内置 skill，只读、不可链接
- * - external: 存储位置里未纳管的条目（真实目录或指向别处的链接）
+ * - skill:    存储位置里的 skill 条目（真实目录，或指向别处的软链）
+ * - builtin:  codex `.system` 内置 skill，只读、不可链接、不可删除
  */
-export type SkillKind = 'central' | 'builtin' | 'external'
+export type SkillKind = 'skill' | 'builtin'
 
 /**
- * 单个存储位置上该 skill 的链接状态。
- * - linked:   指向中央仓库真身的有效软链
+ * 单个存储位置上该 skill 的呈现。
+ * - self:     内容本体就在这个位置（真实目录）
+ * - linked:   这个位置是指向本体的有效软链
  * - absent:   该位置没有同名条目
  * - broken:   该位置是软链但目标已失效（可安全替换）
  * - conflict: 该位置被真实目录或指向别处的有效软链占用（拒绝覆盖）
  * - native:   codex 内置，天然可用且不可操作
  */
-export type LinkState = 'linked' | 'absent' | 'broken' | 'conflict' | 'native'
+export type LinkState = 'self' | 'linked' | 'absent' | 'broken' | 'conflict' | 'native'
 
 export interface SkillLink {
   state: LinkState
-  /** 链接路径（存储位置根 + relDir） */
+  /** 条目路径（存储位置根 + relDir）；absent 时为空串 */
   path: string
-  /** 链接当前指向（断链时记录原目标） */
+  /** 当前指向（软链时记录，断链记录原目标） */
   target?: string
 }
 
@@ -46,46 +48,66 @@ export interface SkillFile {
 }
 
 export interface Skill {
+  /** 稳定 id：`<本体所在位置|detached>:<relDir>`；内置为 `builtin:<relDir>` */
   id: string
   kind: SkillKind
   name: string
-  /** 中央仓库内的相对路径；builtin/external 为其所在位置的相对路径 */
+  /** 目录名；跨位置匹配同名条目用它 */
   relDir: string
-  description: string
-  /** 真身路径 */
+  /** 内容真实路径；断链残骸为链接自身路径 */
   dirPath: string
-  /** builtin/external 的物理所在位置；central 为 null */
-  origin: SkillSource | null
+  /** 本体所在位置；本体在应用管理的四个位置之外（只放软链）时为 null */
+  home: SkillSource | null
+  /** 各存储位置上这个 skill 的呈现 */
   links: Record<SkillSource, SkillLink>
+  description: string
   frontmatter: Record<string, unknown>
   files: SkillFile[]
   mtime: number
   byteSize: number
+  /** 残骸：全部条目都是失效软链，没有内容可读，只能删除 */
+  broken: boolean
 }
 
-export interface GitInfo {
-  available: boolean
-  repoReady: boolean
-  lastCommit: string | null
+export type TrashKind = 'dir' | 'symlink'
+
+/** 回收站里的一个条目（一次删除动作移动的一份东西） */
+export interface TrashItem {
+  id: string
+  /** 原目录名 */
+  relDir: string
+  /** 展示名（frontmatter name 或目录名） */
+  name: string
+  /** 删除前所在位置；索引损坏时为 null */
+  origin: SkillSource | null
+  kind: TrashKind
+  /** 软链条目的原目标 */
+  linkTarget?: string
+  /** 原路径，恢复的目标位置；索引损坏时为 null（只能彻底删除） */
+  sourcePath: string | null
+  deletedAt: number | null
+  byteSize: number
+  /** 内容本体是否就在回收站里（软链条目为 false，内容仍在别处） */
+  hasContent: boolean
 }
 
 export interface AppInfo {
   platform: 'darwin' | 'win32' | 'linux'
   version: string
   managedRoot: string
-  centralRoot: string
+  trashRoot: string
   sourceRoots: Record<SkillSource, string>
-  git: GitInfo
 }
 
 /** 常驻侧边栏、不参与菜单配置的项 */
-export const FIXED_MENU_ITEM_IDS = ['dashboard', 'repository', 'unmanaged'] as const
+export const FIXED_MENU_ITEM_IDS = ['dashboard', 'trash'] as const
 
 /** 可配置（排序 / 显隐）的菜单项 id，不含固定的「设置」 */
 export const MENU_ITEM_IDS = [
   'location:claude',
   'location:codex',
   'location:opencode',
+  'location:agents',
   'workspace:claude',
   'workspace:codex',
   'workspace:opencode',
@@ -115,8 +137,6 @@ export interface FailResult {
 
 export type ActionResult = { ok: true } | FailResult
 
-export type ImportResult = { ok: true; name: string; target: string } | FailResult
-
 export type CloseBehavior = 'ask' | 'tray' | 'quit'
 
 export const CLOSE_BEHAVIOR_LABEL: Record<CloseBehavior, string> = {
@@ -126,60 +146,10 @@ export const CLOSE_BEHAVIOR_LABEL: Record<CloseBehavior, string> = {
 }
 
 export interface AppSettings {
-  /** 中央仓库根目录（唯一真身存放处，git 管理） */
-  centralRoot: string
-  /** 各 agent 的全局 skills 目录（只放软链） */
+  /** 各 agent 的全局 skills 目录（skill 内容就在这些位置里） */
   sourceRoots: Record<SkillSource, string>
   closeBehavior: CloseBehavior
   menu: MenuPrefs
-}
-
-/* -------------------------------- 未纳管条目 -------------------------------- */
-
-/** 某个存储位置上、尚未纳入中央仓库的 skill */
-export interface UnmanagedSkill {
-  /** 稳定 id：`${source}:${relDir}` */
-  id: string
-  source: SkillSource
-  relDir: string
-  name: string
-  description: string
-  /** 物理路径（真实目录或软链） */
-  path: string
-  isSymlink: boolean
-  /** 中央仓库已存在同名 skill */
-  conflict: boolean
-  /** 与中央仓库同名版本的内容是否一致 */
-  identical: boolean
-}
-
-/**
- * 纳入动作：
- * - adopt:     无冲突，直接移入中央仓库并原地建链
- * - overwrite: 用本地副本覆盖中央仓库的同名 skill
- * - rename:    本地副本以 `<name>-2` 并存进中央仓库
- * - keep:      保留中央仓库版本，本地副本改为指向它的链接
- */
-export type AdoptAction = 'adopt' | 'overwrite' | 'rename' | 'keep'
-
-/** 一键导入的汇总结果 */
-export interface AdoptAllResult {
-  ok: true
-  /** 已纳入中央仓库的条目数 */
-  adopted: number
-  /** 同名冲突，必须由用户逐项决定 */
-  conflicts: number
-  /** 纳入失败的条目数 */
-  failed: number
-}
-
-/** 从 git 仓库安装 skills 的结果 */
-export interface InstallFromGitResult {
-  ok: true
-  repo: string
-  /** source 为仓库里的目录名；同名冲突时会以 name 落地（如 xxx-2） */
-  installed: { source: string; name: string }[]
-  failed: { name: string; message: string }[]
 }
 
 /* ---------------------------------- IPC ---------------------------------- */
@@ -191,15 +161,16 @@ export interface SkillApi {
   readFile(skillId: string, relPath: string): Promise<string>
   link(skillId: string, source: SkillSource): Promise<ActionResult>
   unlink(skillId: string, source: SkillSource): Promise<ActionResult>
-  importSkill(path?: string): Promise<ImportResult>
-  installFromGit(url: string): Promise<InstallFromGitResult | FailResult>
-  unmanaged(): Promise<UnmanagedSkill[]>
-  adoptUnmanaged(itemId: string, action: AdoptAction): Promise<ActionResult>
-  adoptAllUnmanaged(): Promise<AdoptAllResult | FailResult>
-  adoptManyUnmanaged(itemIds: string[]): Promise<AdoptAllResult | FailResult>
+  /** 删除 = 把该 skill 在各个环节的条目移入回收站 */
   deleteSkill(skillId: string): Promise<ActionResult>
+  trash(): Promise<TrashItem[]>
+  restoreFromTrash(itemId: string): Promise<ActionResult>
+  /** 从回收站彻底删除，不可恢复 */
+  purgeTrash(itemId: string): Promise<ActionResult>
+  emptyTrash(): Promise<ActionResult>
   revealInFinder(skillId: string): Promise<void>
-  openPath(target: 'central' | SkillSource): Promise<ActionResult>
+  revealTrashItem(itemId: string): Promise<void>
+  openPath(target: SkillSource): Promise<ActionResult>
   onChanged(listener: () => void): () => void
   getSettings(): Promise<AppSettings>
   saveSettings(next: AppSettings): Promise<ActionResult>

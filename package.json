@@ -3,7 +3,7 @@
   "productName": "Skills Deck",
   "version": "0.1.0",
   "private": true,
-  "description": "统一管理 Claude Code / Codex / opencode 三方 Agent Skill 的桌面工具",
+  "description": "统一管理 Claude Code / Codex / opencode / Agents 四个存储位置里 Agent Skill 的桌面工具",
   "main": "./out/main/index.js",
   "author": "zurichscud",
   "license": "MIT",

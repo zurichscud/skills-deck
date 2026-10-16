@@ -2,32 +2,35 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-/** 每个用例独立的四根路径 + 应用数据目录，绝不指向真实 ~ */
+/** 每个用例独立的根路径 + 应用数据目录，绝不指向真实 ~ */
 export interface Sandbox {
   root: string
-  central: string
   claude: string
   codex: string
   opencode: string
+  agents: string
   managed: string
+  trash: string
 }
 
 export async function createSandbox(): Promise<Sandbox> {
   const root = await mkdtemp(join(tmpdir(), 'skillsdeck-e2e-'))
   const sandbox: Sandbox = {
     root,
-    central: join(root, 'central'),
     claude: join(root, 'claude'),
     codex: join(root, 'codex'),
     opencode: join(root, 'opencode'),
+    agents: join(root, 'agents'),
     managed: join(root, 'managed'),
+    trash: join(root, 'trash'),
   }
   for (const dir of [
-    sandbox.central,
     sandbox.claude,
     sandbox.codex,
     sandbox.opencode,
+    sandbox.agents,
     sandbox.managed,
+    sandbox.trash,
   ]) {
     await mkdir(dir, { recursive: true })
   }
@@ -36,11 +39,11 @@ export async function createSandbox(): Promise<Sandbox> {
     join(sandbox.managed, 'config.json'),
     `${JSON.stringify(
       {
-        centralRoot: sandbox.central,
         sourceRoots: {
           claude: sandbox.claude,
           codex: sandbox.codex,
           opencode: sandbox.opencode,
+          agents: sandbox.agents,
         },
         closeBehavior: 'quit',
         menu: { order: [], hidden: [] },
@@ -57,7 +60,7 @@ export async function destroySandbox(sandbox: Sandbox): Promise<void> {
   await rm(sandbox.root, { recursive: true, force: true }).catch(() => undefined)
 }
 
-/** 种一个标准 SKILL.md 目录（不含 git，不碰真实仓库） */
+/** 种一个标准 SKILL.md 目录（不碰真实目录） */
 export async function seedSkill(
   dir: string,
   name: string,

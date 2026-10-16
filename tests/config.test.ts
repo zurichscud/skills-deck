@@ -5,15 +5,15 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { currentSettings, loadSettings, saveSettings } from '../src/main/config'
-import { applyPathOverrides, centralRoot, sourceRootFor } from '../src/main/paths'
+import { applyPathOverrides, sourceRootFor } from '../src/main/paths'
 import type { AppSettings } from '../src/shared/types'
 
 const ENV_KEYS = [
   'SKILLSDECK_MANAGED_ROOT',
-  'SKILLSDECK_CENTRAL_ROOT',
   'SKILLSDECK_SOURCE_ROOT_CLAUDE',
   'SKILLSDECK_SOURCE_ROOT_CODEX',
   'SKILLSDECK_SOURCE_ROOT_OPENCODE',
+  'SKILLSDECK_SOURCE_ROOT_AGENTS',
 ] as const
 
 let root: string
@@ -40,11 +40,11 @@ afterEach(async () => {
 
 function sample(): AppSettings {
   return {
-    centralRoot: join(root, 'central'),
     sourceRoots: {
       claude: join(root, 'c'),
       codex: join(root, 'x'),
       opencode: join(root, 'o'),
+      agents: join(root, 'a'),
     },
     closeBehavior: 'tray',
     menu: { order: [], hidden: [] },
@@ -55,7 +55,7 @@ describe('config', () => {
   it('无配置文件时回退默认值，关闭行为默认 ask', async () => {
     const s = await loadSettings()
     expect(s.closeBehavior).toBe('ask')
-    expect(s.centralRoot).toBe(join(homedir(), '.skills-deck', 'skills'))
+    expect(s.sourceRoots.agents).toBe(join(homedir(), '.agents', 'skills'))
     expect(sourceRootFor('claude')).toBeTruthy()
   })
 
@@ -64,17 +64,17 @@ describe('config', () => {
     const raw = JSON.parse(await readFile(join(root, 'managed', 'config.json'), 'utf8'))
     expect(raw.closeBehavior).toBe('tray')
     expect(raw.sourceRoots.claude).toBe(join(root, 'c'))
-    expect(raw.centralRoot).toBe(join(root, 'central'))
+    expect(raw.sourceRoots.agents).toBe(join(root, 'a'))
 
     const s = await loadSettings()
     expect(s).toEqual(sample())
   })
 
-  it('保存后 paths 立即生效（中央仓库与存储位置改址）', async () => {
+  it('保存后 paths 立即生效（存储位置改址）', async () => {
     await saveSettings(sample())
     expect(sourceRootFor('claude')).toBe(join(root, 'c'))
     expect(sourceRootFor('opencode')).toBe(join(root, 'o'))
-    expect(centralRoot()).toBe(join(root, 'central'))
+    expect(sourceRootFor('agents')).toBe(join(root, 'a'))
   })
 
   it('非法 closeBehavior 回退 ask', async () => {
@@ -90,6 +90,17 @@ describe('config', () => {
     const s = await loadSettings()
     expect(s.closeBehavior).toBe('ask')
     expect(currentSettings().sourceRoots.claude).toBeTruthy()
+  })
+
+  it('缺少 agents 字段时回落默认值，不丢其它位置', async () => {
+    await mkdir(join(root, 'managed'), { recursive: true })
+    await writeFile(
+      join(root, 'managed', 'config.json'),
+      JSON.stringify({ sourceRoots: { claude: join(root, 'only-claude') } }),
+    )
+    const s = await loadSettings()
+    expect(s.sourceRoots.claude).toBe(join(root, 'only-claude'))
+    expect(s.sourceRoots.agents).toBe(join(homedir(), '.agents', 'skills'))
   })
 
   it('环境变量优先于配置（测试隔离）', async () => {
@@ -112,12 +123,12 @@ describe('config', () => {
     expect(s.menu.hidden).toEqual(['location:codex'])
   })
 
-  it('常驻项（Dashboard / 全部 Skill）不参与菜单配置', async () => {
+  it('常驻项（总览 / 回收站）不参与菜单配置', async () => {
     await saveSettings({
       ...sample(),
       menu: {
-        order: ['dashboard', 'repository', 'workspace:codex'],
-        hidden: ['dashboard', 'repository', 'workspace:claude'],
+        order: ['dashboard', 'all', 'trash', 'workspace:codex'],
+        hidden: ['dashboard', 'trash', 'workspace:claude'],
       } as AppSettings['menu'],
     })
     const s = await loadSettings()
