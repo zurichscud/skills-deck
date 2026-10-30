@@ -206,7 +206,7 @@ export default function App(): ReactElement {
     }
   }, [refresh, reloadInfo, reloadTrash])
 
-  /** 删除 = 把该 skill 在各存储位置的条目一起移入回收站 */
+  /** 删除 = 内容本体移入回收站、各存储位置上的软链直接删除 */
   const doDelete = useCallback(
     async (targets: Skill[]): Promise<void> => {
       if (targets.length === 0) return
@@ -216,18 +216,26 @@ export default function App(): ReactElement {
         true,
       )
       let okCount = 0
+      let trashedCount = 0
       const errors: string[] = []
       for (const skill of targets) {
+        const bodyInPlace = SKILL_SOURCES.some((source) => skill.links[source].state === 'self')
         const result = await window.api.deleteSkill(skill.id)
-        if (result.ok) okCount += 1
-        else errors.push(`${skill.name}：${result.message}`)
+        if (result.ok) {
+          okCount += 1
+          if (bodyInPlace) trashedCount += 1
+        } else {
+          errors.push(`${skill.name}：${result.message}`)
+        }
       }
       markPending(
         targets.map((s) => s.id),
         false,
       )
       setDeleteBusy(false)
-      if (okCount > 0) toast.success(`已移入回收站：${okCount} 个 skill`)
+      if (okCount > 0) {
+        toast.success(`已删除：${okCount} 个 skill${trashedCount > 0 ? '，内容进了回收站' : ''}`)
+      }
       if (errors.length > 0) toast.error(errors.slice(0, 3).join('\n'))
       if (selectedId !== null && targets.some((s) => s.id === selectedId)) setSelectedId(null)
       setCheckedIds((prev) => {

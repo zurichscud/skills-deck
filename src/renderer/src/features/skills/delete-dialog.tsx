@@ -29,7 +29,7 @@ export interface DeleteDialogProps {
   onConfirm: (skills: Skill[]) => void
 }
 
-/** 会随删除一起进回收站的三种呈现 */
+/** 删除时按去向分：内容本体进回收站，软链（含失效的）直接删除 */
 type MoveState = Extract<LinkState, 'self' | 'linked' | 'broken'>
 
 const MOVE_STATE_LABEL: Record<MoveState, string> = {
@@ -81,15 +81,27 @@ function Body({ skills, info }: { skills: Skill[]; info: AppInfo | null }): Reac
     <div className="space-y-2 text-sm">
       <p>
         {single ? (
-          <>
-            将把 <b>{single.name}</b> 在各位置的条目移入回收站
-          </>
+          <b>{single.name}</b>
         ) : (
           <>
-            将把选中的 <b>{skills.length}</b> 个 skill 在各位置的条目移入回收站
+            选中的 <b>{skills.length}</b> 个 skill
+          </>
+        )}{' '}
+        在各存储位置的条目会被删除：
+        {bodyCount > 0 ? (
+          <>
+            内容本体 <b>{bodyCount}</b> 处（<b>{files}</b> 个文件、{formatBytes(bytes)}）
+            <b>移入回收站</b>，之后可恢复
+          </>
+        ) : (
+          <>没有内容本体，删除后不可恢复</>
+        )}
+        {linkCount > 0 && (
+          <>
+            ；软链 <b>{linkCount}</b> 处<b>直接删除</b>，不进回收站
           </>
         )}
-        ，之后可从「回收站」<b>恢复</b>。
+        。
       </p>
 
       {entries.length > 0 ? (
@@ -116,32 +128,16 @@ function Body({ skills, info }: { skills: Skill[]; info: AppInfo | null }): Reac
           ))}
         </ul>
       ) : (
-        <p className="text-muted-foreground">没有可移动的条目。</p>
+        <p className="text-muted-foreground">没有可删除的条目。</p>
       )}
-
-      <p className="text-muted-foreground">
-        {bodyCount > 0 && (
-          <>
-            其中 <b>{bodyCount}</b> 处是内容本体，共 <b>{files}</b> 个文件（
-            {formatBytes(bytes)}）会一并移入
-          </>
-        )}
-        {bodyCount > 0 && linkCount > 0 && '；'}
-        {linkCount > 0 && (
-          <>
-            <b>{linkCount}</b> 处是软链，只移动链接本身
-          </>
-        )}
-        {entries.length > 0 && '。'}
-      </p>
 
       {builtins.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          其中 <b>{builtins.length}</b> 个是 Codex 内置 skill，已锁定，不会被移动。
+          其中 <b>{builtins.length}</b> 个是 Codex 内置 skill，已锁定，不会被删除。
         </p>
       )}
 
-      {info && (
+      {info && bodyCount > 0 && (
         <p className="text-xs text-muted-foreground">
           回收站目录：<span className="font-mono break-all">{info.trashRoot}</span>
         </p>
@@ -174,7 +170,13 @@ export function DeleteDialog({
   if (skills.length === 0) return null
 
   const skill = skills[0]!
-  const movable = skills.flatMap(moveEntriesOf).length
+  const entries = skills.flatMap(moveEntriesOf)
+  const movable = entries.length
+  /** 只剩残骸（没有内容本体）时删掉即删掉，不走回收站 */
+  const hasBody = entries.some((entry) => entry.state === 'self')
+  const subject = skills.length > 1 ? `${skills.length} 个 skill` : skill.name
+  const bulk = skills.length > 1 ? `（${skills.length} 项）` : ''
+  const actionLabel = hasBody ? `移入回收站${bulk}` : '删除'
 
   return (
     <AlertDialog open>
@@ -182,9 +184,7 @@ export function DeleteDialog({
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Trash2 className="h-4 w-4 text-destructive-text" />
-            {skills.length > 1
-              ? `将 ${skills.length} 个 skill 移入回收站？`
-              : `将 ${skill.name} 移入回收站？`}
+            {hasBody ? `将 ${subject} 移入回收站？` : `删除 ${subject}？`}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <Body skills={skills} info={info} />
@@ -202,11 +202,7 @@ export function DeleteDialog({
               onConfirm(skills)
             }}
           >
-            {busy
-              ? '移动中…'
-              : skills.length > 1
-                ? `移入回收站（${skills.length} 项）`
-                : '移入回收站'}
+            {busy ? '删除中…' : actionLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

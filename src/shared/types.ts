@@ -161,7 +161,7 @@ export interface SkillApi {
   readFile(skillId: string, relPath: string): Promise<string>
   link(skillId: string, source: SkillSource): Promise<ActionResult>
   unlink(skillId: string, source: SkillSource): Promise<ActionResult>
-  /** 删除 = 把该 skill 在各个环节的条目移入回收站 */
+  /** 删除 = 内容本体移入回收站，各存储位置上的软链（含失效残骸）直接删除 */
   deleteSkill(skillId: string): Promise<ActionResult>
   trash(): Promise<TrashItem[]>
   restoreFromTrash(itemId: string): Promise<ActionResult>

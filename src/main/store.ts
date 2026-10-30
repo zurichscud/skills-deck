@@ -4,8 +4,8 @@ import { dirname, resolve, sep } from 'node:path'
 import type {
   ActionResult,
   FailResult,
-  LinkState,
   Skill,
+  SkillLink,
   SkillSource,
   TrashItem,
 } from '@shared/types'
@@ -27,9 +27,17 @@ function fail(code: FailResult['code'], message: string, conflictAt?: string): F
   return { ok: false, code, message, ...(conflictAt ? { conflictAt } : {}) }
 }
 
-/** 该位置上的条目属于这个 skill 本身（本体或指向本体的有效链接） */
-function isOwnEntry(state: LinkState): boolean {
-  return state === 'self' || state === 'linked'
+/** 回滚用：把刚删掉的软链照原样建回去；目标未知的条目不重建 */
+async function relink(links: SkillLink[]): Promise<void> {
+  for (const link of links) {
+    if (!link.target) continue
+    try {
+      await fs.mkdir(dirname(link.path), { recursive: true })
+      await symlinkDir(link.target, link.path)
+    } catch {
+      /* 回滚尽力而为，失败也不掩盖原始错误 */
+    }
+  }
 }
 
 export class SkillStore {
@@ -125,37 +133,47 @@ export class SkillStore {
   }
 
   /**
-   * 删除：把该 skill 在各存储位置的条目整体移入回收站。
-   * 本体目录与各处软链一起进站，恢复时一起回来；任一步失败就把已进站的搬回原处。
+   * 删除：软链直接删掉，不进回收站；只有真实内容（本体）移入回收站，可恢复。
+   * 先删链接再搬本体：本体搬迁失败就把刚删的链接照原样建回去，绝不留半截状态。
    */
   async deleteSkill(id: string): Promise<ActionResult> {
     const skill = this.index.get(id)
     if (!skill) return fail('NOT_FOUND', '未找到该 skill')
     if (skill.kind === 'builtin') return fail('LOCKED', '内置 skill 不可删除')
 
+    const content = SKILL_SOURCES.find((source) => skill.links[source].state === 'self')
     // 只带走属于自己的条目：别人留在同名位置上的失效残骸不牵连
-    const targets = SKILL_SOURCES.filter((source) => {
+    const links = SKILL_SOURCES.filter((source) => {
       const state = skill.links[source].state
-      return isOwnEntry(state) || (state === 'broken' && skill.broken)
-    }).map((source) => ({ source, link: skill.links[source] }))
-    if (targets.length === 0) return fail('NOT_FOUND', '没有可删除的条目')
+      return state === 'linked' || (state === 'broken' && skill.broken)
+    }).map((source) => skill.links[source])
+    if (content === undefined && links.length === 0) return fail('NOT_FOUND', '没有可删除的条目')
 
-    const done: string[] = []
-    for (const { source, link } of targets) {
+    const removed: SkillLink[] = []
+    for (const link of links) {
+      try {
+        await withRetry(() => fs.unlink(link.path))
+      } catch (err) {
+        await relink(removed)
+        await this.safeRefresh()
+        return fail('IO', `删除链接失败：${(err as Error).message}`)
+      }
+      removed.push(link)
+    }
+
+    if (content !== undefined) {
       const result = await trashEntry({
-        path: link.path,
+        path: skill.links[content].path,
         relDir: skill.relDir,
         name: skill.name,
-        origin: source,
-        ...(link.state === 'broken' && link.target ? { linkTarget: link.target } : {}),
-        byteSize: link.state === 'self' ? skill.byteSize : 0,
+        origin: content,
+        byteSize: skill.byteSize,
       })
       if (!result.ok) {
-        for (const itemId of done.reverse()) await restoreTrashItem(itemId)
+        await relink(removed)
         await this.safeRefresh()
         return result
       }
-      done.push(result.item.id)
     }
 
     await this.safeRefresh()

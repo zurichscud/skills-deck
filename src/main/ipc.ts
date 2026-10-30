@@ -165,7 +165,13 @@ export function wireCloseBehavior(win: BrowserWindow, onShow: () => void): void 
     if (forceQuit) return
     const behavior = currentSettings().closeBehavior
 
-    if (behavior === 'quit') return
+    if (behavior === 'quit') {
+      // macOS 上关掉窗口默认不退出进程，这里显式退出，避免只剩 Dock 图标
+      forceQuit = true
+      destroyTray()
+      app.quit()
+      return
+    }
 
     e.preventDefault()
 

@@ -15,35 +15,35 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-/** 行内「更多操作」菜单（同名条目时用 typeText 定位到具体那一行） */
-async function openRowMenu(page: Page, name: string, typeText?: string): Promise<void> {
-  const trigger = typeText
-    ? rowByType(page, name, typeText).getByRole('button', { name: `更多操作：${name}` })
-    : page.getByRole('button', { name: `更多操作：${name}` })
-  await trigger.click()
+/** 表格行：名称单元格是 `span[title=<skill 名>]`，避开描述列里可能出现的同名字样 */
+function rowsOf(page: Page, name: string): Locator {
+  return page.locator('tbody tr').filter({ has: page.locator(`span[title="${name}"]`) })
+}
+
+/** 「类型」列只有「文件 / 软链」两个值，按列里的徽标收窄到具体那一行 */
+function rowByType(page: Page, name: string, typeText: '文件' | '软链'): Locator {
+  return rowsOf(page, name).filter({ has: page.getByText(typeText, { exact: true }) })
+}
+
+/** 行内「更多操作」菜单（同名条目时传 rowByType(...) 定位到具体那一行） */
+async function openRowMenu(page: Page, name: string, row?: Locator): Promise<void> {
+  await (row ?? rowsOf(page, name)).getByRole('button', { name: `更多操作：${name}` }).click()
   await expect(page.getByRole('menu')).toBeVisible()
 }
 
-function rowByType(page: Page, name: string, typeText: string): Locator {
-  return page
-    .locator('tbody tr')
-    .filter({ hasText: typeText })
-    .filter({ has: page.locator(`span[title="${name}"]`) })
-}
-
 /** 打开链接对话框，返回对话框 locator */
-async function openLinkDialog(page: Page, name: string, typeText?: string): Promise<Locator> {
-  await openRowMenu(page, name, typeText)
+async function openLinkDialog(page: Page, name: string, row?: Locator): Promise<Locator> {
+  await openRowMenu(page, name, row)
   await page.getByRole('menuitem', { name: '链接…' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
   return dialog
 }
 
-async function confirmDelete(page: Page): Promise<void> {
+async function confirmDelete(page: Page, label = '移入回收站'): Promise<void> {
   const confirm = page.getByRole('alertdialog')
   await expect(confirm).toBeVisible()
-  await confirm.getByRole('button', { name: '移入回收站', exact: true }).click()
+  await confirm.getByRole('button', { name: label, exact: true }).click()
 }
 
 test.describe('视图与归并', () => {
@@ -62,7 +62,8 @@ test.describe('视图与归并', () => {
     await expect(page.getByRole('heading', { name: 'opencode' })).toBeVisible()
     await expect(rowByName(page, 'alpha')).toHaveCount(1)
     await expect(rowByName(page, 'only-codex')).toHaveCount(1)
-    await expect(page.getByText('目录 · Claude Code')).toBeVisible()
+    // 类型列只说条目形态：本体落在四个位置里 = 「文件」
+    await expect(rowByType(page, 'alpha', '文件')).toHaveCount(1)
     await expect(page.getByText('2 条结果')).toBeVisible()
     await shot('e2e-01-workspace-opencode')
 
@@ -120,6 +121,13 @@ test.describe('链接', () => {
 
     const dialog = await openLinkDialog(page, 'alpha')
     await expect(dialog.getByText('链接 alpha')).toBeVisible()
+    // 长路径与状态文案不得把弹窗网格撑宽（回归：整行卡片溢出到弹窗外面）
+    const widths = await dialog.evaluate((el) => ({
+      client: el.clientWidth,
+      scroll: el.scrollWidth,
+    }))
+    expect(widths.scroll).toBeLessThanOrEqual(widths.client)
+    await shot('e2e-04-link-dialog')
     // 本体所在位置不可改动
     await expect(dialog.getByRole('checkbox', { name: /^Claude Code：本体/ })).toBeDisabled()
 
@@ -145,7 +153,8 @@ test.describe('链接', () => {
     await seedSkill(join(sandbox.opencode, 'dup'), 'dup-other', '另一份内容')
     await refresh(page)
 
-    const dialog = await openLinkDialog(page, 'dup', '目录 · Claude Code')
+    // Claude Code 视图里只有 dup 本体这一行（opencode 的同名条目是另一个 skill）
+    const dialog = await openLinkDialog(page, 'dup')
     await expect(dialog.getByRole('checkbox', { name: /^opencode：/ })).toBeDisabled()
     await expect(dialog.getByText(/^被占用：/).first()).toBeVisible()
 
@@ -159,8 +168,8 @@ test.describe('链接', () => {
     await symlink(join(sandbox.root, 'gone'), join(sandbox.agents, 'alpha'), 'dir')
     await refresh(page)
 
-    // 残骸自成一列，和本体那行同名 —— 按「类型」列定位到本体那行
-    const dialog = await openLinkDialog(page, 'alpha', '目录 · Claude Code')
+    // 残骸是另一个 skill（条目只在 Agents 位置），本视图里 alpha 只有本体那一行：类型列是「文件」
+    const dialog = await openLinkDialog(page, 'alpha', rowByType(page, 'alpha', '文件'))
     const broken = dialog.getByRole('checkbox', { name: /^Agents：/ })
     await expect(broken).toBeEnabled()
     await expect(dialog.getByText('勾选将替换失效的链接')).toBeVisible()
@@ -178,16 +187,24 @@ test.describe('链接', () => {
 
     await openView(page, 'location', 'Agents')
     await expect(rowByName(page, 'dangling')).toBeVisible()
+    // 类型列如实标成软链：残骸也是软链
+    await expect(rowByType(page, 'dangling', '软链')).toHaveCount(1)
     await openRowMenu(page, 'dangling')
     await expect(page.getByRole('menuitem', { name: '链接…' })).toBeDisabled()
     await page.getByRole('menuitem', { name: '删除' }).click()
-    await confirmDelete(page)
+    // 只剩软链、没有内容进回收站，按钮就是「删除」
+    await confirmDelete(page, '删除')
     await expect.poll(async () => exists(join(sandbox.agents, 'dangling'))).toBe(false)
+    expect(await readdir(sandbox.trash)).toEqual([])
   })
 })
 
 test.describe('删除与回收站', () => {
-  test('删除：本体与各处链接一起进回收站，恢复后回到原位', async ({ sandbox, page, shot }) => {
+  test('删除：内容进回收站、各处软链直接删除，恢复只把内容放回原处', async ({
+    sandbox,
+    page,
+    shot,
+  }) => {
     await seedSkill(join(sandbox.claude, 'alpha'), 'alpha')
     await refresh(page)
 
@@ -199,34 +216,53 @@ test.describe('删除与回收站', () => {
     await page.getByRole('menuitem', { name: '删除' }).click()
     const confirm = page.getByRole('alertdialog')
     await expect(confirm.getByText('将 alpha 移入回收站？')).toBeVisible()
+    await expect(confirm.getByText(/软链 1 处直接删除/)).toBeVisible()
     await expect(confirm.getByText('回收站目录：')).toBeVisible()
     await shot('e2e-05-delete-confirm')
     await confirm.getByRole('button', { name: '移入回收站', exact: true }).click()
-    await expect(toast(page, '已移入回收站：1 个 skill')).toBeVisible()
+    await expect(toast(page, '已删除：1 个 skill')).toBeVisible()
 
     await expect.poll(async () => exists(join(sandbox.claude, 'alpha'))).toBe(false)
     await expect.poll(async () => exists(join(sandbox.codex, 'alpha'))).toBe(false)
-    // 目录 + 软链两条都进了回收站
-    await expect.poll(async () => (await readdir(sandbox.trash)).length).toBe(2)
+    // 只有内容本体进回收站；软链删了就没了
+    await expect.poll(async () => (await readdir(sandbox.trash)).length).toBe(1)
 
     await openView(page, 'trash')
     await expect(page.getByRole('heading', { name: '回收站' })).toBeVisible()
-    await expect(page.getByText('目录', { exact: true })).toBeVisible()
-    await expect(page.getByText('软链', { exact: true })).toBeVisible()
+    await expect(rowByName(page, 'alpha')).toBeVisible()
+    // 回收站里只有文件，没有「类型」这一列
+    await expect(page.getByText('类型')).toHaveCount(0)
     await shot('e2e-06-trash')
 
-    // 两条都恢复（顺序由删除时间决定，不假设谁先谁后）
-    for (const left of [1, 0]) {
-      await page.getByRole('button', { name: '恢复 alpha' }).first().click()
-      await expect.poll(async () => (await readdir(sandbox.trash)).length).toBe(left)
-    }
+    await page.getByRole('button', { name: '恢复 alpha' }).click()
+    await expect.poll(async () => (await readdir(sandbox.trash)).length).toBe(0)
     await expect(page.getByText('回收站是空的')).toBeVisible()
     expect(await readFile(join(sandbox.claude, 'alpha', 'SKILL.md'), 'utf8')).toContain(
       'name: alpha',
     )
-    expect(await readlink(join(sandbox.codex, 'alpha'))).toBe(
-      await realpath(join(sandbox.claude, 'alpha')),
-    )
+    // 软链删除时就已经删掉，恢复不会把它带回来
+    expect(await exists(join(sandbox.codex, 'alpha'))).toBe(false)
+  })
+
+  test('内容在应用之外：删除只删软链，外面的真身一个都不动', async ({ sandbox, page }) => {
+    const outside = join(sandbox.root, 'outside', 'gamma')
+    await seedSkill(outside, 'gamma')
+    await symlink(outside, join(sandbox.agents, 'gamma'), 'dir')
+    await refresh(page)
+
+    await openView(page, 'location', 'Agents')
+    await expect(rowByType(page, 'gamma', '软链')).toHaveCount(1)
+    await openRowMenu(page, 'gamma')
+    await page.getByRole('menuitem', { name: '删除' }).click()
+    const confirm = page.getByRole('alertdialog')
+    // 没有内容本体，删除即删除，不进回收站
+    await expect(confirm.getByText('删除 gamma？')).toBeVisible()
+    await expect(confirm.getByText(/没有内容本体/)).toBeVisible()
+    await confirmDelete(page, '删除')
+
+    await expect.poll(async () => exists(join(sandbox.agents, 'gamma'))).toBe(false)
+    expect(await exists(join(outside, 'SKILL.md'))).toBe(true)
+    expect(await readdir(sandbox.trash)).toEqual([])
   })
 
   test('恢复时原位置被占用：拒绝并如实提示', async ({ sandbox, page }) => {

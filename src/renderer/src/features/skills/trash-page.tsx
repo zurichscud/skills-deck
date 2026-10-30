@@ -178,7 +178,6 @@ export function TrashPage({ onChanged }: TrashPageProps): ReactElement {
             <thead className="sticky top-0 z-10 bg-background">
               <tr className="border-b text-left text-2xs font-medium text-muted-foreground">
                 <th className="w-[200px] px-3 py-2">名称</th>
-                <th className="w-[76px] px-2 py-2">类型</th>
                 <th className="w-[120px] px-2 py-2">原位置</th>
                 <th className="w-[160px] px-2 py-2">删除时间</th>
                 <th className="w-[80px] px-2 py-2">大小</th>
@@ -213,9 +212,6 @@ export function TrashPage({ onChanged }: TrashPageProps): ReactElement {
                           </span>
                         )}
                       </div>
-                    </td>
-                    <td className="px-2 py-2 text-muted-foreground">
-                      {item.kind === 'dir' ? '目录' : '软链'}
                     </td>
                     <td className="px-2 py-2">
                       {item.origin ? (

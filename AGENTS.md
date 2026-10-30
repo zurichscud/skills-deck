@@ -28,13 +28,14 @@ npm run dist       # lint + typecheck + build + electron-builder → release/<ve
 - IPC 通道白名单在 `src/main/ipc.ts`；preload 严格按 `SkillApi` 实现 `window.api`，renderer 只依赖契约；渲染层传来的位置标识必须在 ipc 层过白名单。
 - **没有中央仓库**：skill 的内容本体就在某个存储位置里，其余位置放指向它的软链。归并按解析后的真实路径（`realpath`）分组，同名但内容不同的条目互相记为 `conflict`。
 - 链接状态机 `self / linked / absent / broken / conflict / native`：**只动自己的软链，绝不覆盖他人条目**；遇占用中止并返回 `{ ok:false, code:'CONFLICT', conflictAt }`。`broken` 是失效残骸，任何 skill 都可安全替换。`.system` 内置 skill 全锁（不可链接/删除）。`skills:readFile` 必须防 `..` 路径越界。
-- **删除 = 移入回收站**（`managedRoot()/trash/<id>/`，含 `meta.json` 索引）：本体目录与各处软链一起进站，可恢复；恢复时原位置被占用就拒绝，绝不覆盖。内置 skill 拒绝删除。
+- **删除 = 内容进回收站，软链直接删**（`managedRoot()/trash/<id>/`，含 `meta.json` 索引）：内容本体（真实目录）移入回收站可恢复；各位置的软链（含失效残骸）直接 `unlink`，不进站。先删链接再搬本体，本体搬迁失败就把刚删的链接照原样建回去。恢复时原位置被占用就拒绝，绝不覆盖。内置 skill 拒绝删除。
 - 所有写操作统一返回 `{ ok:true } | { ok:false, code, message }`，renderer 必须处理失败分支。
 
 ## 测试策略
 
 - **绝不「先写实现、后补单测」**。
 - **优先 E2E，把它当作唯一测试手段**：用真实应用（`npm run dev`）跑完整流程验证复杂特性。E2E 收尾必须留下**可验证、可复现的工件**（可重跑的脚本 / 报告 / 截图），只给口头结论不算完成。
+- **不允许主动进行 E2E 测试**：只有用户明确要求时才运行 `npm run test:e2e`（或手动 `npm run dev` 验证）；实现或修复完成后不要自行启动 E2E，说明建议验证的流程并等待用户指示即可。
 - 确实需要隔离测试某个系统时：**先穷举它可能失败的每一种方式，再写实现**（失败清单在前，代码在后）。
 - 现有 `tests/**/*.test.ts`（node 环境，vitest）只作为纯函数与写操作语义的历史回归保留：直接 import main 进程模块（相对路径）与 `use-skills.ts` 纯函数（`views.test.ts`），**必须用 vitest 跑**（依赖 `@shared` alias）。不要为新增实现事后补单测。
 - Electron E2E 在 `e2e/`（Playwright `_electron`，`npm run test:e2e`）：每个用例 `mkdtemp` 沙箱 + `SKILLSDECK_*` 环境变量隔离，只碰临时目录；工件为 `playwright-report/`（HTML）与 `e2e/artifacts/*.png`（关键步骤截图）。

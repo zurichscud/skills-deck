@@ -95,9 +95,13 @@ function baseCell(skill: Skill, source: SkillSource): Cell {
 export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps): ReactElement {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [pending, setPending] = useState<ReadonlySet<SkillSource>>(new Set())
-  /** 会话内的临时勾选：props 尚未刷新时也能如实反映刚做完的操作；每次关闭都会清掉 */
-  const [overrides, setOverrides] = useState<Overrides>({})
+  /** 待确认的勾选：确认前只改界面，不落盘；关闭对话框即丢弃 */
+  const [draft, setDraft] = useState<Overrides>({})
+  /** 已成功落盘的结果：props 尚未刷新时也能如实反映刚做完的操作 */
+  const [applied, setApplied] = useState<Overrides>({})
   const [failures, setFailures] = useState<OpFailure[]>([])
+
+  const busy = pending.size > 0
 
   useEffect(() => {
     let alive = true
@@ -112,11 +116,24 @@ export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps
     }
   }, [])
 
-  function cellOf(skill: Skill, source: SkillSource): Cell {
+  /** 位置当前的实际情况（已考虑刚落盘的结果） */
+  function actualOf(skill: Skill, source: SkillSource): Cell {
     const cell = baseCell(skill, source)
     if (!cell.actionable) return cell
-    const override = overrides[skill.id]?.[source]
-    return override === undefined ? cell : { ...cell, checked: override }
+    const appliedValue = applied[skill.id]?.[source]
+    return appliedValue === undefined ? cell : { ...cell, checked: appliedValue }
+  }
+
+  function cellOf(skill: Skill, source: SkillSource): Cell {
+    const cell = actualOf(skill, source)
+    if (!cell.actionable) return cell
+    const draftValue = draft[skill.id]?.[source]
+    if (draftValue === undefined || draftValue === cell.checked) return cell
+    return {
+      ...cell,
+      checked: draftValue,
+      hint: draftValue ? '确认后创建软链' : '确认后移除软链',
+    }
   }
 
   /** 每个位置一行：勾选状态、本次点击要执行的操作、状态说明 */
@@ -132,13 +149,17 @@ export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps
       onCount === pairs.length ? true : onCount === 0 ? false : 'indeterminate'
     const blocked = pairs.length - movable.length
     const warnCount = pairs.filter((p) => p.cell.warn).length
+    const draftCount = movable.filter(
+      (p) => p.cell.checked !== actualOf(p.skill, source).checked,
+    ).length
 
     const hint =
       pairs.length === 1
         ? pairs[0]!.cell.hint
         : `${onCount} / ${pairs.length} 已启用` +
           (blocked > 0 ? `，${blocked} 个不可改动` : '') +
-          (warnCount > 0 ? `，${warnCount} 个需留意` : '')
+          (warnCount > 0 ? `，${warnCount} 个需留意` : '') +
+          (draftCount > 0 ? `，${draftCount} 个待确认` : '')
 
     const detail = pairs
       .map((p) => `${p.skill.name}：${p.cell.hint}`)
@@ -147,7 +168,7 @@ export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps
 
     return {
       checked,
-      disabled: movable.length === 0 || pending.has(source),
+      disabled: movable.length === 0 || busy,
       targets,
       next,
       hint,
@@ -156,38 +177,64 @@ export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps
     }
   }
 
-  async function applyRow(source: SkillSource, row: Row): Promise<void> {
+  /** 勾选只改草稿，点「确定」才真正创建或移除软链 */
+  function toggleRow(source: SkillSource, row: Row): void {
     if (row.targets.length === 0) return
-    setPending((prev) => new Set(prev).add(source))
+    setDraft((prev) => {
+      const next = { ...prev }
+      for (const skill of row.targets) {
+        next[skill.id] = { ...prev[skill.id], [source]: row.next }
+      }
+      return next
+    })
+  }
+
+  /** 所有待落盘的改动；草稿与实际情况相同的不算 */
+  function plannedChanges(): { skill: Skill; source: SkillSource; next: boolean }[] {
+    return SKILL_SOURCES.flatMap((source) =>
+      skills.flatMap((skill) => {
+        const cell = cellOf(skill, source)
+        const actual = actualOf(skill, source).checked
+        return cell.actionable && cell.checked !== actual
+          ? [{ skill, source, next: cell.checked }]
+          : []
+      }),
+    )
+  }
+
+  async function confirmChanges(): Promise<void> {
+    const changes = plannedChanges()
+    if (changes.length === 0 || busy) return
+    setPending(new Set(changes.map((change) => change.source)))
     setFailures([])
 
     const nextFailures: OpFailure[] = []
     let changed = false
-    for (const skill of row.targets) {
-      const result = row.next
-        ? await window.api.link(skill.id, source)
-        : await window.api.unlink(skill.id, source)
+    for (const change of changes) {
+      const result = change.next
+        ? await window.api.link(change.skill.id, change.source)
+        : await window.api.unlink(change.skill.id, change.source)
       if (result.ok) {
         changed = true
-        setOverrides((prev) => ({ ...prev, [skill.id]: { ...prev[skill.id], [source]: row.next } }))
+        setApplied((prev) => ({
+          ...prev,
+          [change.skill.id]: { ...prev[change.skill.id], [change.source]: change.next },
+        }))
       } else {
         nextFailures.push({
-          skill: skill.name,
-          source,
+          skill: change.skill.name,
+          source: change.source,
           message: result.conflictAt ? `${result.message}（${result.conflictAt}）` : result.message,
         })
       }
     }
 
-    setPending((prev) => {
-      const rest = new Set(prev)
-      rest.delete(source)
-      return rest
-    })
+    setPending(new Set())
     // 有改动就立刻通知（部分失败时列表也已变化）
     if (changed) onChanged()
 
     if (nextFailures.length > 0) {
+      // 失败项保留草稿，用户可以再次确认重试
       setFailures(nextFailures)
       return
     }
@@ -196,13 +243,16 @@ export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps
   }
 
   function handleClose(): void {
-    setOverrides({})
+    setDraft({})
+    setApplied({})
+    setPending(new Set())
     setFailures([])
     onClose()
   }
 
   const single = skills.length === 1 ? skills[0]! : null
   const title = single ? `链接 ${single.name}` : `链接 ${skills.length} 个 skill`
+  const changes = plannedChanges()
 
   return (
     <Dialog
@@ -216,7 +266,9 @@ export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription asChild>
             <div className="space-y-1 text-sm">
-              <p>勾选即在对应位置创建指向内容本体的软链，取消勾选即移除该软链。</p>
+              <p>
+                勾选要链接的位置，点「确定」后才会创建指向内容本体的软链；取消勾选则在确定后移除该软链。
+              </p>
               {single && (
                 <p
                   className="truncate font-mono text-2xs text-muted-foreground"
@@ -245,7 +297,7 @@ export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps
                   checked={row.checked}
                   disabled={row.disabled}
                   title={row.title}
-                  onCheckedChange={() => void applyRow(source, row)}
+                  onCheckedChange={() => toggleRow(source, row)}
                   aria-label={`${SOURCE_LABEL[source]}：${row.hint}`}
                 />
                 <AgentIcon agent={source} className="h-4 w-4" />
@@ -298,11 +350,22 @@ export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps
         <Separator />
         <DialogFooter className="items-center sm:justify-between">
           <p className="text-2xs text-muted-foreground">
-            只动本 skill 自己的软链，被占用的位置不会覆盖
+            {changes.length > 0
+              ? `待确认 ${changes.length} 处变更`
+              : '只动本 skill 自己的软链，被占用的位置不会覆盖'}
           </p>
-          <Button variant="outline" static onClick={handleClose}>
-            关闭
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" static onClick={handleClose} disabled={busy}>
+              取消
+            </Button>
+            <Button
+              static
+              onClick={() => void confirmChanges()}
+              disabled={busy || changes.length === 0}
+            >
+              {busy ? '应用中…' : '确定'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

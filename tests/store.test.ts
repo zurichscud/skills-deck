@@ -175,8 +175,8 @@ describe('SkillStore.link / unlink', () => {
   })
 })
 
-describe('SkillStore.deleteSkill（移入回收站）', () => {
-  it('本体与各处链接一起进回收站，可逐条恢复', async () => {
+describe('SkillStore.deleteSkill（内容进回收站，软链直接删）', () => {
+  it('本体进回收站、各处软链直接删除；恢复只把本体放回原处', async () => {
     await store.link('claude:alpha', 'codex')
     await store.link('claude:alpha', 'agents')
     expect(store.get('claude:alpha')?.links.codex.state).toBe('linked')
@@ -186,20 +186,16 @@ describe('SkillStore.deleteSkill（移入回收站）', () => {
     expect(await exists(join(root, 'codex', 'alpha'))).toBe(false)
     expect(await exists(join(root, 'agents', 'alpha'))).toBe(false)
 
+    // 软链不进回收站，站里只有本体这一条
     const items = await store.trash()
-    expect(items).toHaveLength(3)
-    expect(items.every((i) => i.relDir === 'alpha')).toBe(true)
-    expect(items.map((i) => i.origin).sort()).toEqual(['agents', 'claude', 'codex'])
-    expect(items.find((i) => i.origin === 'claude')?.kind).toBe('dir')
-    expect(items.find((i) => i.origin === 'codex')?.kind).toBe('symlink')
-    expect(items.find((i) => i.origin === 'codex')?.hasContent).toBe(false)
+    expect(items).toHaveLength(1)
+    expect(items[0]?.origin).toBe('claude')
+    expect(items[0]?.kind).toBe('dir')
 
-    for (const item of items) {
-      expect(await store.restoreFromTrash(item.id)).toEqual({ ok: true })
-    }
+    expect(await store.restoreFromTrash(items[0]!.id)).toEqual({ ok: true })
     expect(await exists(join(root, 'claude', 'alpha', 'SKILL.md'))).toBe(true)
-    expect((await lstat(join(root, 'codex', 'alpha'))).isSymbolicLink()).toBe(true)
-    expect(await readlink(join(root, 'codex', 'alpha'))).toBe(await alphaReal())
+    // 软链在删除时就已经删掉，恢复不会把它带回来
+    expect(await exists(join(root, 'codex', 'alpha'))).toBe(false)
     expect(await store.trash()).toHaveLength(0)
   })
 
@@ -232,15 +228,13 @@ describe('SkillStore.deleteSkill（移入回收站）', () => {
     expect(await readdir(trashRoot())).toEqual([])
   })
 
-  it('断链残骸可删除', async () => {
+  it('断链残骸可删除：只有软链，不进回收站', async () => {
     await symlink(join(root, 'gone-dir'), join(root, 'opencode', 'dangling'))
     await store.refresh()
 
     expect(await store.deleteSkill('opencode:dangling')).toEqual({ ok: true })
     expect(await exists(join(root, 'opencode', 'dangling'))).toBe(false)
-    const items = await store.trash()
-    expect(items).toHaveLength(1)
-    expect(items[0]?.kind).toBe('symlink')
+    expect(await store.trash()).toHaveLength(0)
   })
 
   it('内置拒绝删除', async () => {

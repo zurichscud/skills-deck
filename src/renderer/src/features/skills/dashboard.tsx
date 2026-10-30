@@ -50,7 +50,8 @@ export function Dashboard({ skills, onJump, trashCount }: DashboardProps): React
         <div>
           <h1 className="text-xl font-semibold tracking-tight">总览</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            直接管理各存储位置里的 skill：链接会在勾选的位置建立软链，删除只是移入回收站。
+            直接管理各存储位置里的
+            skill：链接会在勾选的位置建立软链，删除时内容本体进回收站、各位置的软链直接删。
           </p>
         </div>
 

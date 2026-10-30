@@ -2,6 +2,7 @@ import { SOURCE_LABEL, type Skill } from '@shared/types'
 import { Loader2, MoreHorizontal } from 'lucide-react'
 import { type ReactElement } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -14,31 +15,49 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
+/** 「类型」列只有两个值：文件 = 位置里是真实内容；软链 = 位置里只有指向别处的软链 */
+type RowType = {
+  text: '文件' | '软链'
+  variant: 'secondary' | 'outline'
+  warn: boolean
+  hint: string
+}
+
 /**
  * 这一行的东西是什么：
- * - 目录：内容本体是真实目录，落在某个存储位置里
- * - 软链：内容在应用管理的四个位置之外，位置里只有一个指向它的软链
- * - 内置：codex `.system` 自带
- * - 残骸：软链已失效，没有内容可读
+ * - 文件：内容本体落在某个存储位置里（codex `.system` 内置也是真实文件，锁定与否见提示）
+ * - 软链：本体在四个位置之外（应用之外）或链接已失效（残骸），位置里只剩软链
  */
-function typeLabel(skill: Skill): { text: string; hint: string; warn: boolean } {
+function typeLabel(skill: Skill): RowType {
   if (skill.kind === 'builtin') {
-    return { text: '内置', hint: `.system 自带，锁定不可改：${skill.dirPath}`, warn: false }
+    return {
+      text: '文件',
+      variant: 'secondary',
+      warn: false,
+      hint: `.system 自带，锁定不可改：${skill.dirPath}`,
+    }
   }
   if (skill.broken) {
-    return { text: '残骸 · 软链', hint: `链接已失效，只剩残骸：${skill.dirPath}`, warn: true }
+    return {
+      text: '软链',
+      variant: 'outline',
+      warn: true,
+      hint: `链接已失效，只剩残骸：${skill.dirPath}`,
+    }
   }
   if (skill.home === null) {
     return {
-      text: '软链 · 应用之外',
-      hint: `内容不在四个位置里，位置里只有软链：${skill.dirPath}`,
+      text: '软链',
+      variant: 'outline',
       warn: false,
+      hint: `内容不在四个位置里，位置里只有软链：${skill.dirPath}`,
     }
   }
   return {
-    text: `目录 · ${SOURCE_LABEL[skill.home]}`,
-    hint: `内容本体：${skill.dirPath}`,
+    text: '文件',
+    variant: 'secondary',
     warn: false,
+    hint: `内容本体在 ${SOURCE_LABEL[skill.home]}：${skill.dirPath}`,
   }
 }
 
@@ -171,15 +190,13 @@ export function SkillTable({
                   </span>
                 </td>
                 <td className="px-2 py-2">
-                  <span
-                    className={cn(
-                      'block truncate text-2xs',
-                      type.warn ? 'text-warn' : 'text-muted-foreground',
-                    )}
+                  <Badge
+                    variant={type.variant}
+                    className={cn('text-2xs', type.warn && 'border-warn/50 text-warn')}
                     title={type.hint}
                   >
                     {type.text}
-                  </span>
+                  </Badge>
                 </td>
                 <td className="px-1 py-2">
                   <span className="sr-only">操作</span>
