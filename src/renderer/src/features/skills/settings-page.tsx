@@ -60,7 +60,7 @@ export function SettingsPage({ onSave, version, info }: SettingsPageProps): Reac
   }
 
   const pick = async (key: SkillSource): Promise<void> => {
-    const dir = await window.api.pickDirectory()
+    const dir = await window.api.pickDirectory(key)
     if (!dir || !draft) return
     const next = { ...draft, sourceRoots: { ...draft.sourceRoots, [key]: dir } }
     setDraft(next)

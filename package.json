@@ -1,7 +1,7 @@
 {
   "name": "skillsdeck",
   "productName": "Skills Deck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "统一管理 Claude Code / Codex / opencode / Agents 四个存储位置里 Agent Skill 的桌面工具",
   "main": "./out/main/index.js",

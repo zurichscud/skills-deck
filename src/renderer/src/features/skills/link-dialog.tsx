@@ -74,7 +74,7 @@ function baseCell(skill: Skill, source: SkillSource): Cell {
 
   switch (link.state) {
     case 'self':
-      return { checked: true, actionable: false, hint: '本体就在这个位置' }
+      return { checked: true, actionable: false, hint: '源位置' }
     case 'linked':
       return { checked: true, actionable: true, hint: '已链接，取消勾选即移除软链' }
     case 'native':
@@ -266,17 +266,7 @@ export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription asChild>
             <div className="space-y-1 text-sm">
-              <p>
-                勾选要链接的位置，点「确定」后才会创建指向内容本体的软链；取消勾选则在确定后移除该软链。
-              </p>
-              {single && (
-                <p
-                  className="truncate font-mono text-2xs text-muted-foreground"
-                  title={single.dirPath}
-                >
-                  {single.dirPath}
-                </p>
-              )}
+              <p>勾选要链接的位置</p>
             </div>
           </DialogDescription>
         </DialogHeader>
@@ -349,12 +339,10 @@ export function LinkDialog({ open, skills, onClose, onChanged }: LinkDialogProps
 
         <Separator />
         <DialogFooter className="items-center sm:justify-between">
-          <p className="text-2xs text-muted-foreground">
-            {changes.length > 0
-              ? `待确认 ${changes.length} 处变更`
-              : '只动本 skill 自己的软链，被占用的位置不会覆盖'}
-          </p>
-          <div className="flex items-center gap-2">
+          {changes.length > 0 && (
+            <p className="text-2xs text-muted-foreground">待确认 {changes.length} 处变更</p>
+          )}
+          <div className="ms-auto flex items-center gap-2">
             <Button variant="outline" static onClick={handleClose} disabled={busy}>
               取消
             </Button>

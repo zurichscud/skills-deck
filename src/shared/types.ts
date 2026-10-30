@@ -174,5 +174,5 @@ export interface SkillApi {
   onChanged(listener: () => void): () => void
   getSettings(): Promise<AppSettings>
   saveSettings(next: AppSettings): Promise<ActionResult>
-  pickDirectory(): Promise<string | null>
+  pickDirectory(source: SkillSource): Promise<string | null>
 }

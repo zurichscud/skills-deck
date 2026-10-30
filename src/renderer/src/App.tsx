@@ -454,6 +454,8 @@ export default function App(): ReactElement {
 
                 <div className="min-h-0 flex-1">
                   <SkillTable
+                    view={listView}
+                    query={query}
                     skills={visible}
                     loading={loading}
                     filtered={query.trim() !== '' || status !== 'all'}

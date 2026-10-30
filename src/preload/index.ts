@@ -52,7 +52,8 @@ const api: SkillApi = {
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
   saveSettings: (next: AppSettings): Promise<ActionResult> =>
     ipcRenderer.invoke('settings:save', next),
-  pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('settings:pickDirectory'),
+  pickDirectory: (source: SkillSource): Promise<string | null> =>
+    ipcRenderer.invoke('settings:pickDirectory', source),
 }
 
 contextBridge.exposeInMainWorld('api', api)

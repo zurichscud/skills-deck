@@ -112,7 +112,7 @@ export function filterSkills(
     if (!skillInView(s, view)) return false
     if (status === 'builtin' && s.kind !== 'builtin') return false
     if (!q) return true
-    return s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
+    return s.name.toLowerCase().includes(q)
   })
 }
 

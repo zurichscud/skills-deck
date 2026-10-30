@@ -8,7 +8,7 @@ import type {
   SkillSource,
   TrashItem,
 } from '@shared/types'
-import { SKILL_SOURCES } from '@shared/types'
+import { SKILL_SOURCES, SOURCE_LABEL } from '@shared/types'
 import { BrowserWindow, Tray, app, dialog, ipcMain, nativeImage, shell } from 'electron'
 
 import { currentSettings, loadSettings, saveSettings } from './config'
@@ -118,14 +118,19 @@ export function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('settings:pickDirectory', async (): Promise<string | null> => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-    const result = await dialog.showOpenDialog(win, {
-      title: '选择目录',
-      properties: ['openDirectory', 'createDirectory'],
-    })
-    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
-  })
+  ipcMain.handle(
+    'settings:pickDirectory',
+    async (_e, target: SkillSource): Promise<string | null> => {
+      if (!isSource(target)) return null
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+      const result = await dialog.showOpenDialog(win, {
+        title: `选择 ${SOURCE_LABEL[target]} 的 skills 目录`,
+        defaultPath: sourceRootFor(target),
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+    },
+  )
 
   void loadSettings().then(async () => {
     await skillStore.init()

@@ -71,9 +71,9 @@ export function ViewHeader({
             ref={searchRef}
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="搜索 skill…"
+            placeholder="搜索 skill 名称…"
             className="h-9 ps-8 pe-14 text-sm"
-            aria-label="搜索 skill"
+            aria-label="搜索 skill 名称"
           />
           <kbd className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded border bg-background px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
             {modKey}
