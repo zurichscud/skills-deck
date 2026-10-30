@@ -1,30 +1,38 @@
-import { BrowserWindow, Tray, app, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { join } from 'node:path'
-import { currentSettings, loadSettings, saveSettings } from './config'
-import { disabledRoot, managedRoot, sourceRootFor } from './paths'
-import { skillStore } from './store'
-import { broadcastSkillsChanged, startWatcher } from './watcher'
+
 import type {
+  ActionResult,
   AppInfo,
   AppSettings,
-  CopyResult,
-  CopyStrategy,
-  SetEnabledResult,
   Skill,
-  SkillSource
+  SkillSource,
+  TrashItem,
 } from '@shared/types'
+import { SKILL_SOURCES, SOURCE_LABEL } from '@shared/types'
+import { BrowserWindow, Tray, app, dialog, ipcMain, nativeImage, shell } from 'electron'
+
+import { currentSettings, loadSettings, saveSettings } from './config'
+import { managedRoot, sourceRootFor, trashRoot } from './paths'
+import { skillStore } from './store'
+import { broadcastSkillsChanged, startWatcher } from './watcher'
+
+/** 渲染层传来的位置标识必须落在白名单里，避免索引越界 */
+function isSource(value: unknown): value is SkillSource {
+  return typeof value === 'string' && (SKILL_SOURCES as readonly string[]).includes(value)
+}
 
 export function registerIpc(): void {
-  ipcMain.handle('skills:info', (): AppInfo => ({
-    platform: process.platform as AppInfo['platform'],
-    managedRoot: managedRoot(),
-    disabledRoot: disabledRoot(),
-    sourceRoots: {
-      claude: sourceRootFor('claude'),
-      codex: sourceRootFor('codex'),
-      opencode: sourceRootFor('opencode')
+  ipcMain.handle('skills:info', (): AppInfo => {
+    const sourceRoots = {} as Record<SkillSource, string>
+    for (const source of SKILL_SOURCES) sourceRoots[source] = sourceRootFor(source)
+    return {
+      platform: process.platform as AppInfo['platform'],
+      version: app.getVersion(),
+      managedRoot: managedRoot(),
+      trashRoot: trashRoot(),
+      sourceRoots,
     }
-  }))
+  })
 
   ipcMain.handle('skills:list', (): Skill[] => skillStore.list())
 
@@ -34,40 +42,72 @@ export function registerIpc(): void {
     return skillStore.list()
   })
 
-  ipcMain.handle('skills:readFile', (_e, skillId: string, relPath: string) => skillStore.readFile(skillId, relPath))
-
-  ipcMain.handle(
-    'skills:setEnabled',
-    async (_e, skillId: string, enabled: boolean): Promise<SetEnabledResult> => {
-      const result = await skillStore.setEnabled(skillId, enabled)
-      if (result.ok) broadcastSkillsChanged()
-      return result
-    }
+  ipcMain.handle('skills:readFile', (_e, skillId: string, relPath: string) =>
+    skillStore.readFile(skillId, relPath),
   )
 
   ipcMain.handle(
-    'skills:copyTo',
-    async (_e, skillId: string, target: SkillSource, strategy: CopyStrategy): Promise<CopyResult> => {
-      const result = await skillStore.copyTo(skillId, target, strategy)
+    'skills:link',
+    async (_e, skillId: string, source: SkillSource): Promise<ActionResult> => {
+      if (!isSource(source)) return { ok: false, code: 'IO', message: '未知的存储位置' }
+      const result = await skillStore.link(skillId, source)
       if (result.ok) broadcastSkillsChanged()
       return result
-    }
+    },
   )
-
-  ipcMain.handle('skills:revealInFinder', (_e, skillId: string) => skillStore.revealInFinder(skillId))
 
   ipcMain.handle(
-    'skills:delete',
-    async (_e, skillId: string): Promise<SetEnabledResult> => {
-      const result = await skillStore.deleteSkill(skillId)
+    'skills:unlink',
+    async (_e, skillId: string, source: SkillSource): Promise<ActionResult> => {
+      if (!isSource(source)) return { ok: false, code: 'IO', message: '未知的存储位置' }
+      const result = await skillStore.unlink(skillId, source)
       if (result.ok) broadcastSkillsChanged()
       return result
-    }
+    },
   )
 
-  ipcMain.handle('settings:get', async (): Promise<AppSettings> => currentSettings())
+  ipcMain.handle('skills:delete', async (_e, skillId: string): Promise<ActionResult> => {
+    const result = await skillStore.deleteSkill(skillId)
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
 
-  ipcMain.handle('settings:save', async (_e, next: AppSettings): Promise<SetEnabledResult> => {
+  ipcMain.handle('skills:revealInFinder', (_e, skillId: string) =>
+    skillStore.revealInFinder(skillId),
+  )
+
+  ipcMain.handle('skills:openPath', async (_e, target: SkillSource): Promise<ActionResult> => {
+    if (!isSource(target)) return { ok: false, code: 'IO', message: '未知的存储位置' }
+    const err = await shell.openPath(sourceRootFor(target))
+    if (err) return { ok: false, code: 'IO', message: err }
+    return { ok: true }
+  })
+
+  ipcMain.handle('trash:list', (): Promise<TrashItem[]> => skillStore.trash())
+
+  ipcMain.handle('trash:restore', async (_e, itemId: string): Promise<ActionResult> => {
+    const result = await skillStore.restoreFromTrash(itemId)
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
+
+  ipcMain.handle('trash:purge', async (_e, itemId: string): Promise<ActionResult> => {
+    const result = await skillStore.purgeTrash(itemId)
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
+
+  ipcMain.handle('trash:empty', async (): Promise<ActionResult> => {
+    const result = await skillStore.emptyTrash()
+    if (result.ok) broadcastSkillsChanged()
+    return result
+  })
+
+  ipcMain.handle('trash:reveal', (_e, itemId: string) => skillStore.revealTrashItem(itemId))
+
+  ipcMain.handle('settings:get', (): AppSettings => currentSettings())
+
+  ipcMain.handle('settings:save', async (_e, next: AppSettings): Promise<ActionResult> => {
     try {
       await saveSettings(next)
       await skillStore.refresh()
@@ -78,14 +118,19 @@ export function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('settings:pickDirectory', async (): Promise<string | null> => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-    const result = await dialog.showOpenDialog(win, {
-      title: '选择目录',
-      properties: ['openDirectory', 'createDirectory']
-    })
-    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
-  })
+  ipcMain.handle(
+    'settings:pickDirectory',
+    async (_e, target: SkillSource): Promise<string | null> => {
+      if (!isSource(target)) return null
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+      const result = await dialog.showOpenDialog(win, {
+        title: `选择 ${SOURCE_LABEL[target]} 的 skills 目录`,
+        defaultPath: sourceRootFor(target),
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+    },
+  )
 
   void loadSettings().then(async () => {
     await skillStore.init()
@@ -125,7 +170,13 @@ export function wireCloseBehavior(win: BrowserWindow, onShow: () => void): void 
     if (forceQuit) return
     const behavior = currentSettings().closeBehavior
 
-    if (behavior === 'quit') return
+    if (behavior === 'quit') {
+      // macOS 上关掉窗口默认不退出进程，这里显式退出，避免只剩 Dock 图标
+      forceQuit = true
+      destroyTray()
+      app.quit()
+      return
+    }
 
     e.preventDefault()
 
@@ -143,7 +194,7 @@ export function wireCloseBehavior(win: BrowserWindow, onShow: () => void): void 
         cancelId: 2,
         title: '关闭 Skills Deck',
         message: '要如何处理这个窗口？',
-        detail: '可在侧栏「设置」中更改此行为。'
+        detail: '可在侧栏「设置」中更改此行为。',
       })
       .then(({ response }) => {
         if (response === 0) {
@@ -156,8 +207,4 @@ export function wireCloseBehavior(win: BrowserWindow, onShow: () => void): void 
         }
       })
   })
-}
-
-export async function pickDirectoryForSettings(): Promise<void> {
-  await shell.openPath(managedRoot())
 }

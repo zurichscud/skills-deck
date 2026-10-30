@@ -8,8 +8,11 @@ directories:
 files:
   - out/**/*
   - package.json
+  - resources/**/*
 
 asar: true
+asarUnpack:
+  - resources/**/*
 npmRebuild: false
 
 mac:

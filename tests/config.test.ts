@@ -1,17 +1,19 @@
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
 import { currentSettings, loadSettings, saveSettings } from '../src/main/config'
-import { applyPathOverrides, disabledRoot, managedRoot, sourceRootFor } from '../src/main/paths'
+import { applyPathOverrides, sourceRootFor } from '../src/main/paths'
 import type { AppSettings } from '../src/shared/types'
 
 const ENV_KEYS = [
   'SKILLSDECK_MANAGED_ROOT',
-  'SKILLSDECK_DISABLED_ROOT',
   'SKILLSDECK_SOURCE_ROOT_CLAUDE',
   'SKILLSDECK_SOURCE_ROOT_CODEX',
-  'SKILLSDECK_SOURCE_ROOT_OPENCODE'
+  'SKILLSDECK_SOURCE_ROOT_OPENCODE',
+  'SKILLSDECK_SOURCE_ROOT_AGENTS',
 ] as const
 
 let root: string
@@ -41,10 +43,11 @@ function sample(): AppSettings {
     sourceRoots: {
       claude: join(root, 'c'),
       codex: join(root, 'x'),
-      opencode: join(root, 'o')
+      opencode: join(root, 'o'),
+      agents: join(root, 'a'),
     },
-    disabledRoot: join(root, 'parking'),
-    closeBehavior: 'tray'
+    closeBehavior: 'tray',
+    menu: { order: [], hidden: [] },
   }
 }
 
@@ -52,7 +55,8 @@ describe('config', () => {
   it('无配置文件时回退默认值，关闭行为默认 ask', async () => {
     const s = await loadSettings()
     expect(s.closeBehavior).toBe('ask')
-    expect(s.disabledRoot).toBe(join(root, 'managed', 'disabled'))
+    expect(s.sourceRoots.agents).toBe(join(homedir(), '.agents', 'skills'))
+    expect(sourceRootFor('claude')).toBeTruthy()
   })
 
   it('保存后写入 config.json 并可读回', async () => {
@@ -60,16 +64,17 @@ describe('config', () => {
     const raw = JSON.parse(await readFile(join(root, 'managed', 'config.json'), 'utf8'))
     expect(raw.closeBehavior).toBe('tray')
     expect(raw.sourceRoots.claude).toBe(join(root, 'c'))
+    expect(raw.sourceRoots.agents).toBe(join(root, 'a'))
 
     const s = await loadSettings()
     expect(s).toEqual(sample())
   })
 
-  it('保存后 paths 立即生效（仓库地址与停车场改址）', async () => {
+  it('保存后 paths 立即生效（存储位置改址）', async () => {
     await saveSettings(sample())
     expect(sourceRootFor('claude')).toBe(join(root, 'c'))
     expect(sourceRootFor('opencode')).toBe(join(root, 'o'))
-    expect(disabledRoot()).toBe(join(root, 'parking'))
+    expect(sourceRootFor('agents')).toBe(join(root, 'a'))
   })
 
   it('非法 closeBehavior 回退 ask', async () => {
@@ -87,10 +92,58 @@ describe('config', () => {
     expect(currentSettings().sourceRoots.claude).toBeTruthy()
   })
 
+  it('缺少 agents 字段时回落默认值，不丢其它位置', async () => {
+    await mkdir(join(root, 'managed'), { recursive: true })
+    await writeFile(
+      join(root, 'managed', 'config.json'),
+      JSON.stringify({ sourceRoots: { claude: join(root, 'only-claude') } }),
+    )
+    const s = await loadSettings()
+    expect(s.sourceRoots.claude).toBe(join(root, 'only-claude'))
+    expect(s.sourceRoots.agents).toBe(join(homedir(), '.agents', 'skills'))
+  })
+
   it('环境变量优先于配置（测试隔离）', async () => {
     await saveSettings(sample())
     process.env['SKILLSDECK_SOURCE_ROOT_CLAUDE'] = join(root, 'from-env')
     await loadSettings()
     expect(sourceRootFor('claude')).toBe(join(root, 'from-env'))
+  })
+
+  it('菜单显隐与排序持久化，非法 id 被过滤', async () => {
+    await saveSettings({
+      ...sample(),
+      menu: {
+        order: ['workspace:opencode', 'location:claude'],
+        hidden: ['location:codex', 'bogus'] as AppSettings['menu']['hidden'],
+      },
+    })
+    const s = await loadSettings()
+    expect(s.menu.order).toEqual(['workspace:opencode', 'location:claude'])
+    expect(s.menu.hidden).toEqual(['location:codex'])
+  })
+
+  it('常驻项（总览 / 回收站）不参与菜单配置', async () => {
+    await saveSettings({
+      ...sample(),
+      menu: {
+        order: ['dashboard', 'all', 'trash', 'workspace:codex'],
+        hidden: ['dashboard', 'trash', 'workspace:claude'],
+      } as AppSettings['menu'],
+    })
+    const s = await loadSettings()
+    expect(s.menu.order).toEqual(['workspace:codex'])
+    expect(s.menu.hidden).toEqual(['workspace:claude'])
+  })
+
+  it('缺失或损坏的 menu 回退默认', async () => {
+    await mkdir(join(root, 'managed'), { recursive: true })
+    await writeFile(
+      join(root, 'managed', 'config.json'),
+      JSON.stringify({ menu: { order: 'nope', hidden: [1, 'location:codex', 'location:codex'] } }),
+    )
+    const s = await loadSettings()
+    expect(s.menu.order).toEqual([])
+    expect(s.menu.hidden).toEqual(['location:codex'])
   })
 })

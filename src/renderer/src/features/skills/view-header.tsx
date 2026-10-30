@@ -1,14 +1,15 @@
+import { SOURCE_LABEL, type AppInfo, type Skill, type SkillSource } from '@shared/types'
+import { FolderOpen, RefreshCw, Search } from 'lucide-react'
 import { type ReactElement, type RefObject } from 'react'
-import { Plus, RefreshCw, Search } from 'lucide-react'
+
 import { AgentIcon } from '@/components/agent-icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AGENT_SOURCES, skillInView, type ListView } from '@/hooks/use-skills'
 import { cn } from '@/lib/utils'
-import { AGENT_SOURCES, type View } from '@/hooks/use-skills'
-import { SOURCE_LABEL, type AppInfo, type Skill, type SkillSource } from '@shared/types'
 
 export interface ViewHeaderProps {
-  view: Exclude<View, { kind: 'dashboard' }>
+  view: ListView
   skills: Skill[]
   info: AppInfo | null
   query: string
@@ -16,12 +17,18 @@ export interface ViewHeaderProps {
   searchRef: RefObject<HTMLInputElement | null>
   refreshing: boolean
   onRefresh: () => void
-  onAdd: () => void
+  /** 在系统文件管理器里打开某个存储位置 */
+  onOpenLocation: (source: SkillSource) => void
 }
 
-function titleOf(view: Exclude<View, { kind: 'dashboard' }>): { agent: SkillSource; title: string } {
-  if (view.kind === 'location') return { agent: view.source, title: SOURCE_LABEL[view.source] }
-  return { agent: view.agent as SkillSource, title: SOURCE_LABEL[view.agent as SkillSource] }
+function HeaderIcon({ view }: { view: ListView }): ReactElement {
+  const agent: SkillSource = view.kind === 'location' ? view.source : view.agent
+  return <AgentIcon agent={agent} className="h-8 w-8 shrink-0" />
+}
+
+function titleOf(view: ListView): string {
+  if (view.kind === 'location') return SOURCE_LABEL[view.source]
+  return SOURCE_LABEL[view.agent]
 }
 
 export function ViewHeader({
@@ -33,62 +40,51 @@ export function ViewHeader({
   searchRef,
   refreshing,
   onRefresh,
-  onAdd
+  onOpenLocation,
 }: ViewHeaderProps): ReactElement {
-  const { agent, title } = titleOf(view)
-
-  const allowed: SkillSource[] = view.kind === 'location' ? [view.source] : AGENT_SOURCES[view.agent]
-  const scoped = skills.filter((s) => allowed.includes(s.source))
-  const unique = new Set(scoped.map((s) => s.name)).size
+  const title = titleOf(view)
+  const scoped = skills.filter((s) => skillInView(s, view))
 
   const pathLine =
     view.kind === 'location'
-      ? info?.sourceRoots[view.source] ?? '…'
-      : `读取 ${allowed.length} 个位置 · ${scoped.length} 条 skill · ${unique} 个不重复`
+      ? (info?.sourceRoots[view.source] ?? '…')
+      : `合并读取 ${AGENT_SOURCES[view.agent].length} 个位置，共 ${scoped.length} 条 skill`
 
-  const statLine =
-    view.kind === 'location'
-      ? `${scoped.filter((s) => s.enabled && !s.builtin).length} 启用 / ${scoped.filter((s) => !s.enabled && !s.builtin).length} 停用 / ${scoped.filter((s) => s.builtin).length} 内置`
-      : null
+  const modKey = info?.platform === 'darwin' ? '⌘K' : 'Ctrl K'
 
   return (
     <div className="flex shrink-0 items-center gap-4 border-b px-4 py-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2.5">
-          <AgentIcon agent={agent} className="h-8 w-8 shrink-0" />
+          <HeaderIcon view={view} />
           <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
-          <span className="shrink-0 rounded-full border px-2 py-0.5 text-[12px] tabular-nums text-muted-foreground">
-            {scoped.length}
-          </span>
-          {view.kind === 'workspace' && (
-            <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">工作区</span>
-          )}
         </div>
-        <p className="mt-1 truncate text-[12px] text-muted-foreground" title={pathLine}>
-          {statLine ? `${pathLine} · ${statLine}` : pathLine}
+        <p className="mt-1 truncate font-mono text-2xs text-muted-foreground" title={pathLine}>
+          {pathLine}
         </p>
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
         <div className="relative w-[300px]">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             ref={searchRef}
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="搜索 Agent Skills..."
-            className="h-9 rounded-lg bg-muted/40 pl-8 pr-14 text-[13px]"
-            aria-label="搜索 skill"
+            placeholder="搜索 skill 名称…"
+            className="h-9 ps-8 pe-14 text-sm"
+            aria-label="搜索 skill 名称"
           />
-          <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            ⌘K
+          <kbd className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded border bg-background px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
+            {modKey}
           </kbd>
         </div>
 
         <Button
           variant="outline"
           size="icon"
-          className="h-9 w-9 rounded-lg"
+          static
+          className="h-9 w-9"
           onClick={onRefresh}
           disabled={refreshing}
           aria-label="刷新"
@@ -97,14 +93,20 @@ export function ViewHeader({
           <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
         </Button>
 
-        <Button
-          size="sm"
-          className="h-9 gap-1.5 rounded-lg bg-emerald-600 px-3.5 text-[13px] text-white hover:bg-emerald-700"
-          onClick={onAdd}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          添加 Skill
-        </Button>
+        {/* 只有存储位置视图对应唯一目录，其余视图不提供「打开目录」 */}
+        {view.kind === 'location' && (
+          <Button
+            variant="outline"
+            size="sm"
+            static
+            className="h-9 gap-1.5 px-3 text-sm"
+            onClick={() => onOpenLocation(view.source)}
+            title={pathLine}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            打开存储位置
+          </Button>
+        )}
       </div>
     </div>
   )

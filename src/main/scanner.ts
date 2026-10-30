@@ -1,14 +1,22 @@
 import { promises as fs } from 'node:fs'
 import { join, relative, sep } from 'node:path'
+
+import type { Skill, SkillFile, SkillFileKind, SkillLink, SkillSource } from '@shared/types'
+import { SKILL_SOURCES } from '@shared/types'
+
 import { SKILL_ENTRY_FILE, classifyFile, parseSkillDoc } from './parse'
 import { makeSkillId, sourceRootFor } from './paths'
-import type { Skill, SkillEntryKind, SkillFile, SkillSource } from '@shared/types'
 
 const SKIP_DIRS = new Set(['node_modules', '.git'])
 const MAX_FILES = 400
 const MAX_DEPTH = 5
 
-async function walkFiles(root: string, dir: string, out: SkillFile[], depth: number): Promise<void> {
+async function walkFiles(
+  root: string,
+  dir: string,
+  out: SkillFile[],
+  depth: number,
+): Promise<void> {
   if (depth > MAX_DEPTH || out.length >= MAX_FILES) return
   let entries
   try {
@@ -30,60 +38,23 @@ async function walkFiles(root: string, dir: string, out: SkillFile[], depth: num
       await walkFiles(root, abs, out, depth + 1)
     } else if (st.isFile()) {
       const rel = relative(root, abs).split(sep).join('/')
-      out.push({ path: rel, size: st.size, kind: classifyFile(rel) })
+      const kind: SkillFileKind = classifyFile(rel)
+      out.push({ path: rel, size: st.size, kind })
     }
   }
 }
 
-/** 判定目录项类型：跟随符号链接，区分真身/软链/断链 */
-async function entryKindOf(dirPath: string): Promise<{ kind: SkillEntryKind; linkTarget?: string }> {
-  let lst
-  try {
-    lst = await fs.lstat(dirPath)
-  } catch {
-    return { kind: 'broken' }
-  }
-  if (!lst.isSymbolicLink()) {
-    return { kind: lst.isDirectory() ? 'real' : 'broken' }
-  }
-  try {
-    return { kind: 'symlink', linkTarget: await fs.realpath(dirPath) }
-  } catch {
-    return { kind: 'broken', linkTarget: await fs.readlink(dirPath).catch(() => undefined) }
-  }
+interface LoadedDoc {
+  name: string
+  description: string
+  frontmatter: Record<string, unknown>
+  files: SkillFile[]
+  mtime: number
+  byteSize: number
 }
 
-async function loadSkill(
-  source: SkillSource,
-  relDir: string,
-  dirPath: string,
-  enabled: boolean,
-  builtin: boolean
-): Promise<Skill | null> {
-  const fallbackName = relDir.split('/').pop() ?? relDir
-  const { kind, linkTarget } = await entryKindOf(dirPath)
-  const originPath = join(sourceRootFor(source), relDir)
-
-  if (kind === 'broken') {
-    return {
-      id: makeSkillId(source, relDir),
-      source,
-      name: fallbackName,
-      relDir,
-      description: '符号链接失效，无法读取内容',
-      enabled,
-      builtin,
-      entryKind: 'broken',
-      linkTarget,
-      dirPath,
-      originPath,
-      frontmatter: {},
-      files: [],
-      mtime: 0,
-      byteSize: 0
-    }
-  }
-
+/** 读取一个 skill 目录；缺少 SKILL.md 或不可读时返回 null */
+async function loadDir(dirPath: string, fallbackName: string): Promise<LoadedDoc | null> {
   const entryPath = join(dirPath, SKILL_ENTRY_FILE)
   let entryStat
   try {
@@ -105,45 +76,133 @@ async function loadSkill(
   }
 
   return {
-    id: makeSkillId(source, relDir),
-    source,
     name: doc.name,
-    relDir,
     description: doc.description,
-    enabled,
-    builtin,
-    entryKind: kind,
-    linkTarget,
-    dirPath,
-    originPath,
     frontmatter: doc.frontmatter,
     files,
     mtime: entryStat.mtimeMs,
-    byteSize: files.reduce((n, f) => n + f.size, 0)
+    byteSize: files.reduce((n, f) => n + f.size, 0),
   }
 }
 
-async function isSkillDirCandidate(abs: string): Promise<boolean> {
+async function realpathOrNull(p: string): Promise<string | null> {
   try {
-    const st = await fs.stat(abs)
-    return st.isDirectory()
+    return await fs.realpath(p)
   } catch {
-    // 断链或无权限：仅当 lstat 显示是符号链接时才作为「失效 skill」候选
-    try {
-      return (await fs.lstat(abs)).isSymbolicLink()
-    } catch {
-      return false
-    }
+    return null
   }
 }
 
-async function scanSourceRoot(
-  source: SkillSource,
-  root: string,
-  enabled: boolean,
-  includeSystem: boolean
-): Promise<Skill[]> {
+/** 存储位置里的一个条目（真实目录或软链），已带内容摘要 */
+interface RawEntry {
+  source: SkillSource
+  /** 目录名，跨位置匹配同名条目用它 */
+  relDir: string
+  /** 条目自身路径（可能是软链） */
+  path: string
+  /** 是否软链 */
+  symlink: boolean
+  /** readlink 的原始目标（软链才有） */
+  linkTarget?: string
+  /** 解析后的真实路径；失效软链为 null */
+  real: string | null
+  name: string
+  description: string
+  frontmatter: Record<string, unknown>
+  files: SkillFile[]
+  mtime: number
+  byteSize: number
+}
+
+/**
+ * 扫描一个存储位置里的全部条目。
+ * 缺少 SKILL.md 的目录不算 skill；失效软链没有内容可读，仍如实列出（可删除）。
+ */
+async function scanLocation(source: SkillSource): Promise<RawEntry[]> {
+  const root = sourceRootFor(source)
+  let entries
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true })
+  } catch {
+    return []
+  }
+
+  const out: RawEntry[] = []
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue
+    const path = join(root, entry.name)
+    let lst
+    try {
+      lst = await fs.lstat(path)
+    } catch {
+      continue
+    }
+
+    if (lst.isSymbolicLink()) {
+      let linkTarget: string | undefined
+      try {
+        linkTarget = await fs.readlink(path)
+      } catch {
+        /* 读不到目标就按失效处理 */
+      }
+      const real = await realpathOrNull(path)
+      if (!real) {
+        out.push({
+          source,
+          relDir: entry.name,
+          path,
+          symlink: true,
+          ...(linkTarget ? { linkTarget } : {}),
+          real: null,
+          name: entry.name,
+          description: '符号链接失效，无法读取内容',
+          frontmatter: {},
+          files: [],
+          mtime: 0,
+          byteSize: 0,
+        })
+        continue
+      }
+      const doc = await loadDir(real, entry.name)
+      if (!doc) continue
+      out.push({
+        source,
+        relDir: entry.name,
+        path,
+        symlink: true,
+        ...(linkTarget ? { linkTarget } : {}),
+        real,
+        ...doc,
+      })
+      continue
+    }
+
+    if (!lst.isDirectory()) continue
+    const doc = await loadDir(path, entry.name)
+    if (!doc) continue
+    out.push({
+      source,
+      relDir: entry.name,
+      path,
+      symlink: false,
+      real: await realpathOrNull(path),
+      ...doc,
+    })
+  }
+  return out
+}
+
+function emptyLinks(): Record<SkillSource, SkillLink> {
+  const out = {} as Record<SkillSource, SkillLink>
+  for (const source of SKILL_SOURCES) out[source] = { state: 'absent', path: '' }
+  return out
+}
+
+/** codex `.system` 内置 skill：只读、锁定、不可链接 */
+export async function scanBuiltins(): Promise<Skill[]> {
+  const root = join(sourceRootFor('codex'), '.system')
   const out: Skill[] = []
+
   let entries
   try {
     entries = await fs.readdir(root, { withFileTypes: true })
@@ -152,40 +211,139 @@ async function scanSourceRoot(
   }
 
   for (const entry of entries) {
-    const abs = join(root, entry.name)
-    if (!(await isSkillDirCandidate(abs))) continue
-
-    if (entry.name === '.system') {
-      if (!includeSystem) continue
-      let subs
-      try {
-        subs = await fs.readdir(abs, { withFileTypes: true })
-      } catch {
-        continue
-      }
-      for (const sub of subs) {
-        const subAbs = join(abs, sub.name)
-        if (!(await isSkillDirCandidate(subAbs))) continue
-        const skill = await loadSkill(source, `.system/${sub.name}`, subAbs, true, true)
-        if (skill) out.push(skill)
-      }
+    if (entry.name.startsWith('.')) continue
+    const dirPath = join(root, entry.name)
+    let st
+    try {
+      st = await fs.stat(dirPath)
+    } catch {
       continue
     }
+    if (!st.isDirectory()) continue
+    const doc = await loadDir(dirPath, entry.name)
+    if (!doc) continue
 
-    if (entry.name.startsWith('.')) continue
-    const skill = await loadSkill(source, entry.name, abs, enabled, false)
-    if (skill) out.push(skill)
+    const relDir = `.system/${entry.name}`
+    const links = emptyLinks()
+    links.codex = { state: 'native', path: dirPath }
+
+    out.push({
+      id: `builtin:${relDir}`,
+      kind: 'builtin',
+      name: doc.name,
+      relDir,
+      dirPath,
+      home: null,
+      links,
+      description: doc.description,
+      frontmatter: doc.frontmatter,
+      files: doc.files,
+      mtime: doc.mtime,
+      byteSize: doc.byteSize,
+      broken: false,
+    })
   }
   return out
 }
 
-export async function scanAll(disabledRootFor: (source: SkillSource) => string): Promise<Skill[]> {
-  const out: Skill[] = []
-  const sources: SkillSource[] = ['claude', 'codex', 'opencode']
-  for (const source of sources) {
-    out.push(...(await scanSourceRoot(source, sourceRootFor(source), true, source === 'codex')))
-    out.push(...(await scanSourceRoot(source, disabledRootFor(source), false, false)))
+/** 同名条目按内容（真实路径）分成一组，一个分组就是一个 skill */
+interface Group {
+  relDir: string
+  real: string | null
+  broken: boolean
+  entries: RawEntry[]
+}
+
+export async function scanAll(): Promise<Skill[]> {
+  const perSource = new Map<SkillSource, RawEntry[]>()
+  for (const source of SKILL_SOURCES) perSource.set(source, await scanLocation(source))
+
+  /** `位置:目录名` → 该位置上的条目（一个位置里同名条目唯一） */
+  const slots = new Map<string, RawEntry>()
+  for (const source of SKILL_SOURCES) {
+    for (const entry of perSource.get(source) ?? []) slots.set(`${source}:${entry.relDir}`, entry)
   }
-  out.sort((a, b) => a.name.localeCompare(b.name) || a.source.localeCompare(b.source))
+
+  const groups: Group[] = []
+  /** `位置:目录名` → 它所属的分组，用于分辨「被同名条目占用」 */
+  const owner = new Map<string, Group>()
+  const relDirs = new Set<string>()
+  for (const entry of slots.values()) relDirs.add(entry.relDir)
+
+  for (const relDir of relDirs) {
+    const entries = [...slots.values()].filter((e) => e.relDir === relDir)
+    const byReal = new Map<string, RawEntry[]>()
+    const broken: RawEntry[] = []
+    for (const entry of entries) {
+      if (!entry.real) {
+        broken.push(entry)
+        continue
+      }
+      const list = byReal.get(entry.real) ?? []
+      list.push(entry)
+      byReal.set(entry.real, list)
+    }
+    for (const [real, list] of byReal) groups.push({ relDir, real, broken: false, entries: list })
+    if (broken.length > 0) groups.push({ relDir, real: null, broken: true, entries: broken })
+  }
+
+  for (const group of groups) {
+    for (const entry of group.entries) owner.set(`${entry.source}:${entry.relDir}`, group)
+  }
+
+  const out: Skill[] = []
+  for (const group of groups) {
+    const { relDir, real, broken, entries } = group
+    const sample = entries.find((e) => !e.symlink) ?? entries[0]!
+    // 本体 = 真实目录所在的位置；全是软链（内容在应用之外）时为 null
+    const home = entries.find((e) => !e.symlink)?.source ?? null
+    const anchor = home ?? entries[0]!.source
+
+    const links = emptyLinks()
+    for (const source of SKILL_SOURCES) {
+      const entry = slots.get(`${source}:${relDir}`)
+      if (!entry) {
+        links[source] = { state: 'absent', path: '' }
+        continue
+      }
+      // 失效软链没有内容、也不属于任何条目，任何 skill 都可以安全替换它
+      if (!entry.real) {
+        links[source] = {
+          state: 'broken',
+          path: entry.path,
+          ...(entry.linkTarget ? { target: entry.linkTarget } : {}),
+        }
+        continue
+      }
+      if (owner.get(`${source}:${relDir}`) !== group) {
+        links[source] = { state: 'conflict', path: entry.path, target: entry.real }
+        continue
+      }
+      links[source] = {
+        state: entry.symlink ? 'linked' : 'self',
+        path: entry.path,
+        target: entry.real,
+      }
+    }
+
+    out.push({
+      id: makeSkillId(anchor, relDir),
+      kind: 'skill',
+      name: sample.name,
+      relDir,
+      dirPath: real ?? entries[0]!.path,
+      home,
+      links,
+      description: sample.description,
+      frontmatter: sample.frontmatter,
+      files: sample.files,
+      mtime: sample.mtime,
+      byteSize: sample.byteSize,
+      broken,
+    })
+  }
+
+  out.push(...(await scanBuiltins()))
+  out.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
   return out
 }

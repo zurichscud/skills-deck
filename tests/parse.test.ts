@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { classifyFile, parseSkillDoc, splitFrontmatter } from '../src/main/parse'
 
 describe('splitFrontmatter', () => {
@@ -44,7 +45,10 @@ describe('splitFrontmatter', () => {
 
 describe('parseSkillDoc', () => {
   it('读取 name 与 description', () => {
-    const doc = parseSkillDoc('---\nname: agent-browser\ndescription: Browser automation.\n---\n# hi\n', 'fallback')
+    const doc = parseSkillDoc(
+      '---\nname: agent-browser\ndescription: Browser automation.\n---\n# hi\n',
+      'fallback',
+    )
     expect(doc.name).toBe('agent-browser')
     expect(doc.description).toBe('Browser automation.')
   })
@@ -62,7 +66,7 @@ describe('parseSkillDoc', () => {
   it('保留可选字段', () => {
     const doc = parseSkillDoc(
       '---\nname: a\ndescription: b\nversion: 1.0.0\nauthor: me\nallowed-tools: Bash(x:*)\n---\n',
-      'a'
+      'a',
     )
     expect(doc.frontmatter['version']).toBe('1.0.0')
     expect(doc.frontmatter['author']).toBe('me')

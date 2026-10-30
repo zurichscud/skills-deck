@@ -1,5 +1,5 @@
-import { load } from 'js-yaml'
 import type { SkillFileKind } from '@shared/types'
+import { load } from 'js-yaml'
 
 export interface ParsedSkillDoc {
   name: string
@@ -39,13 +39,44 @@ export function parseSkillDoc(raw: string, fallbackName: string): ParsedSkillDoc
       frontmatter = { __parseError: 'frontmatter YAML 解析失败' }
     }
   }
-  const name = typeof frontmatter['name'] === 'string' && frontmatter['name'].trim() ? frontmatter['name'].trim() : fallbackName
-  const description = typeof frontmatter['description'] === 'string' ? frontmatter['description'].trim() : ''
+  const name =
+    typeof frontmatter['name'] === 'string' && frontmatter['name'].trim()
+      ? frontmatter['name'].trim()
+      : fallbackName
+  const description =
+    typeof frontmatter['description'] === 'string' ? frontmatter['description'].trim() : ''
   return { name, description, frontmatter, body }
 }
 
-const SCRIPT_EXT = new Set(['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'sh', 'ps1', 'rb', 'go', 'rs', 'bash', 'zsh'])
-const ASSET_EXT = new Set(['png', 'svg', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp', 'woff', 'woff2', 'ttf'])
+const SCRIPT_EXT = new Set([
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'mjs',
+  'cjs',
+  'py',
+  'sh',
+  'ps1',
+  'rb',
+  'go',
+  'rs',
+  'bash',
+  'zsh',
+])
+const ASSET_EXT = new Set([
+  'png',
+  'svg',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'ico',
+  'bmp',
+  'woff',
+  'woff2',
+  'ttf',
+])
 
 export function classifyFile(relPath: string): SkillFileKind {
   const base = relPath.split('/').pop() ?? relPath

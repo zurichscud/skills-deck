@@ -1,118 +1,90 @@
 # Skills Deck
 
-统一管理 **Claude Code / Codex / opencode** 三方 Agent Skill 的 macOS 桌面应用。
+统一管理 **Claude Code / Codex / opencode / Agents** 四个存储位置里 Agent Skill 的 macOS 桌面应用。
 
-用一套界面查看、启停、分发、删除散落在多个目录里的 skill，并明确回答一个核心问题：**这个 Agent 到底能用哪些 skill？**
+一套界面查看、链接、删除散落在多个目录里的 skill，并明确回答一个核心问题：**这个 Agent 到底能用哪些 skill？**
 
 ---
 
-## 一、核心概念
+## 一、核心模型
 
-理解本软件只需三个概念：**存储位置 → Skill 条目 → 工作区**。
+只有三层概念：**存储位置 → Skill 条目 → 工作区**。skill 的内容就在某个存储位置里，没有中间仓库。
 
-### 1. 存储位置（Storage Location）
+```
+~/.claude/skills/                ─┐
+~/.codex/skills/（含 .system）    │  存储位置：skill 的内容本体就在这些位置里
+~/.config/opencode/skills/        │  （真实目录，或指向别处的软链）
+~/.agents/skills/                ─┘
+```
 
-skill 文件在磁盘上的**物理存放目录**。默认三个，可在设置中改址：
-
-| 位置 | 默认路径 |
+| 概念 | 说明 |
 |---|---|
-| Claude Code | `~/.claude/skills` |
-| Codex | `~/.codex/skills` |
-| opencode | `~/.config/opencode/skills` |
+| **存储位置** | 四个 agent 读取 skill 的全局目录，可在设置里改址；`.codex/skills/.system` 内置 skill 保持原地、锁定 |
+| **Skill 条目** | 某个位置里的一个目录（真实目录或软链）。**按解析后的真实路径归并**：同一份内容出现在多个位置时算一个 skill |
+| **链接** | 把一个位置里的 skill 链到另一个位置：在目标位置建指向本体的软链 |
+| **工作区** | Agent 视角的可用清单：Claude Code 读 claude，Codex 读 codex，**opencode 读三者并集**（不含 agents） |
 
-每个位置下是若干 skill 目录，格式统一：`SKILL.md`（YAML frontmatter）+ 可选附属资源（`references/`、`templates/`、脚本、图片等）。
+映射定义在 `src/renderer/src/hooks/use-skills.ts` 的 `AGENT_SOURCES`。
 
-### 2. Skill 条目（Skill）
-
-**「一个位置上的一个 skill 目录」**即一条条目。同一 skill 若在三个位置各有一份，就是**三条独立条目**——可分别启停、分别删除。
-
-标识：`id = `${source}:${relDir}``，例如 `claude:vue`、`codex:.system/imagegen`。用 `relDir` 而非 `name` 参与 id，是为了能表达嵌套路径（如 Codex 内置 skill）。
-
-### 3. 工作区（Workspace / Agent）
-
-**Agent 视角的「可用 skill 清单」**——它由若干存储位置合并而来：
-
-| Agent | 读取的存储位置 | 合并后 |
-|---|---|---|
-| Claude Code | `claude` | 1:1 |
-| Codex | `codex` | 1:1 |
-| **opencode** | `claude` + `codex` + `opencode` | **三位置并集** |
-
-因此 opencode 工作区会看到 74 条（22+30+22），其中同名 skill 出现多行、每行标注「位置」。映射定义在 `src/renderer/src/hooks/use-skills.ts` 的 `AGENT_SOURCES`。
+同名但**内容不同**的条目不算同一个 skill：它们各自成立，并互相把对方所在的位置记为「被占用」。
 
 ---
 
-## 二、目录约定
+## 二、链接语义 ⚠️
 
-```
-~/.claude/skills/                        ← 存储位置：Claude Code
-~/.codex/skills/                         ← 存储位置：Codex
-│   └── .system/<name>/SKILL.md          ←   Codex 内置 skill（锁定，见下）
-~/.config/opencode/skills/               ← 存储位置：opencode
+这是最容易出错的地方。任何写操作都遵守一条铁律：**只动自己的链接，绝不覆盖别人的东西**。
 
-~/Library/Application Support/skillsdeck/
-├── config.json                          ← 应用配置（路径、关闭行为）
-└── disabled/                            ← ★ 停用停车场
-    ├── claude/<name>/
-    ├── codex/<name>/
-    └── opencode/<name>/
-```
+| 状态 | 含义 | 链接操作 | 取消链接 |
+|---|---|---|---|
+| `self` | 内容本体就在这个位置（真实目录） | 拒绝（已在） | 拒绝（那是内容，要删就删条目） |
+| `linked` | 这个位置是指向本体的有效软链 | 幂等成功 | 删除链接本体 |
+| `absent` | 该位置没有同名条目 | 创建软链 | 幂等成功 |
+| `broken` | 该位置是软链但目标已失效 | 删掉残骸后重建 | 拒绝（不是本 skill 的链接） |
+| `conflict` | 该位置被真实目录或指向别处的有效软链占用 | **中止并报 `CONFLICT`** | 拒绝，不做改动 |
+| `native` | Codex `.system` 内置，天然可用 | 不可操作 | 不可操作 |
 
-**停用停车场**按来源二级分目录，因此同名 skill 分别停用时**不会撞路径**，且启用时天然知道该移回哪个源。
+- 链接使用**解析后的真实路径**，形如 `<存储位置>/<name> -> <内容真实路径>`
+- 扫描**跟随软链**（`fs.stat` 而非 `Dirent.isDirectory()`）；没有 `SKILL.md` 的目录不算 skill
+- 失效软链没有内容可读，仍如实列出（标记为残骸），任何 skill 都可以安全替换它
+
+交互上不再有逐位置的开关：点某个 skill 的「**链接…**」打开对话框，四个位置一栏一个勾选框 —— 勾上建链，取消勾选删链；`self` 显示为「本体」且不可取消，`conflict` 显示冲突路径并禁用。
 
 ---
 
 ## 三、关键机制
 
-### 3.1 扫描与符号链接语义 ⚠️
+### 3.1 删除：内容进回收站，软链直接删
 
-三方 skill 目录里**大量条目是符号链接**（例如统一指向 `~/.skills-manager/skills/<name>`）。这是最容易出错的地方，规则如下：
+- **删除**作用于一个 skill 在各位置的**条目整体**：**内容本体**（真实目录）移入回收站，可恢复；各位置的**软链**（含失效残骸）**直接删除**，不进站，删完原位置不留痕迹
+- 先删链接再搬本体：本体搬迁失败就把刚删的链接照原样建回去，不留半截状态
+- 别人留在同名位置上的失效残骸不牵连：它属于另一条记录，要删就在它自己那行删
+- **内置 skill**：拒绝
+- 二次确认对话框逐条列出去向：本体（进回收站，可恢复）/ 链接、失效链接（直接删除）；只剩残骸、没有本体时对话框说的是「删除」而不是「移入回收站」
 
-| 场景 | 行为 | 原因 |
-|---|---|---|
-| 扫描 | **跟随软链**识别为 skill | `Dirent.isDirectory()` 不跟随软链，必须 `fs.stat` |
-| 断链 | 照常列出，标记 `entryKind: 'broken'` | 让用户看见并清理，而不是静默消失 |
-| 启停移动 | **只移动链接本体** | 真身可能被三个来源共享 |
-| 复制分发 | **解引用复制真身** | 目标得到独立副本，不依赖原软链指向 |
-| 物理删除 | **只删链接本身** | 删真身会一次干掉所有引用它的来源 |
+### 3.2 回收站
 
-`Skill.entryKind: 'real' | 'symlink' | 'broken'`，软链会记录 `linkTarget`（真身路径）并在详情面板展示。
-
-### 3.2 启用 / 停用（移动到停车场）
+存放在应用数据目录下的 `trash/`（可用 `SKILLSDECK_TRASH_ROOT` 改址），条目布局：
 
 ```
-停用：  rename(~/.claude/skills/vue  →  .../skillsdeck/disabled/claude/vue)
-启用：  rename(.../skillsdeck/disabled/claude/vue  →  ~/.claude/skills/vue)
+<trashRoot>/<时间戳-随机>/entry        ← 被移走的内容本体（软链直接删，不进站）
+<trashRoot>/<时间戳-随机>/meta.json    ← 名称、原位置、原路径、类型、删除时间
 ```
 
-- **同卷**：`fs.rename` 原子完成
-- **跨卷（EXDEV）**：`copy → 临时名 rename → 删源`，任一步失败即清理残留，避免半移动状态
-- **状态判定**：扫源目录 = 启用；扫停车场 = 停用。**不依赖元数据文件**，位置即状态
-- **冲突**：目标已存在同名目录一律**中止并报 `CONFLICT`**，绝不静默覆盖
-- **粒度**：按来源独立。同名 skill 可在 Claude 启用、Codex 停用
-
-### 3.3 复制分发
-
-把 skill 内容复制到另一个存储位置。解引用复制，产物是独立真实目录。目标冲突时四种策略：
-
-| 策略 | 行为 |
+| 操作 | 行为 |
 |---|---|
-| `ask` | 不改动，返回 `CONFLICT` + 冲突路径，交给 UI 弹窗 |
-| `skip` | 保留目标，返回 `skipped` |
-| `overwrite` | 删除目标后复制，返回 `overwritten` |
-| `rename` | 生成 `name-2`、`name-3`… 并存，返回 `created` |
+| 恢复 | 放回原路径；原位置已被占用则中止并报 `CONFLICT`，绝不覆盖 |
+| 打开所在文件夹 | 在 Finder 中显示条目 |
+| 彻底删除 | 删除该条目，不可恢复（二次确认） |
+| 清空回收站 | 一次删掉全部条目（二次确认） |
 
-### 3.4 物理删除（不可恢复）
+站里只有内容本体（`kind: dir`）；早期版本按旧规则留下的软链条目仍如实列出，一样可以恢复或彻底删除。
 
-不进停车场、不可撤销。二次确认对话框**按条目类型如实说明后果**：
+不自动清理。`meta.json` 缺失或损坏时条目仍会列出，但标记为「来源未知」——只能彻底删除，不给恢复入口。
 
-- **真实目录** → 列出文件数与体积，整目录递归删除
-- **符号链接** → 只删链接，显示真身路径并说明「其它来源中指向同一真身的链接不受影响」
-- **断链** → 只清理链接残骸
+### 3.3 内置 skill（`codex/.system/`）
 
-### 3.5 内置 skill（`codex/.system/`）
-
-Codex 自带的 6 个系统 skill。始终为启用态，**锁定**：不可停用、不可复制、不可删除，只读浏览。UI 上以「内置」区分，并单列筛选。
+Codex 自带的系统 skill。始终为启用态，**锁定**：不可链接、不可取消链接、不可删除，只读浏览。
+「内置」筛选仅在 **Codex 视图**提供。
 
 ---
 
@@ -121,14 +93,18 @@ Codex 自带的 6 个系统 skill。始终为启用态，**锁定**：不可停�
 ```
 ┌─ Renderer（React 19 + Tailwind 4 + shadcn/ui）────────────────┐
 │  Sidebar │ ViewHeader │ SkillTable │ SkillDetail │ Dashboard   │
+│  LinkDialog │ TrashPage │ DeleteDialog │ SettingsPage          │
 └─────────────────┬────────────────────────────────────────────┘
                   │ contextBridge（contextIsolation + sandbox）
 ┌─────────────────▼────────────────────────────────────────────┐
 │  Main                                                           │
-│  store.ts    ★ 唯一状态属主：可变索引 + 全部写操作                │
-│  scanner.ts  只读扫描（跟随软链、解析 frontmatter、归类文件）      │
-│  watcher.ts  chokidar 监听 4 个根目录 → 广播 skills:changed       │
-│  paths.ts    路径解析（env > config > 默认）                      │
+│  store.ts    ★ 唯一状态属主：索引 + 全部写操作（link/unlink/     │
+│              删除、回收站恢复/彻底删除/清空）                     │
+│  scanner.ts  只读扫描：按位置收条目 → 按真实路径归并成 skill      │
+│  trash.ts    回收站落盘：移入、索引、恢复、彻底删除               │
+│  fsops.ts    文件操作与瞬时占用退避重试（无业务语义）             │
+│  watcher.ts  chokidar 监听 4 个位置 + 回收站 → 广播 skills:changed│
+│  paths.ts    路径解析（env > config > 默认）                     │
 │  config.ts   config.json 读写                                   │
 │  parse.ts    frontmatter 拆分与 YAML 解析（纯函数）                │
 └───────────────────────────────────────────────────────────────┘
@@ -137,20 +113,20 @@ Codex 自带的 6 个系统 skill。始终为启用态，**锁定**：不可停�
 **分层原则**
 
 - `src/shared/types.ts` 是**唯一的跨进程契约**，preload 按其签名实现 `window.api`，renderer 只依赖它
-- **单一可变状态属主**：`SkillStore` 独占索引与全部写操作（`setEnabled` / `copyTo` / `deleteSkill`）；`scanner` 只读；其它层读契约、发命令，不持有第二份真相
+- **单一可变状态属主**：`SkillStore` 独占索引与全部写操作；`scanner` / `trash`（扫描侧）只读；其它层读契约、发命令
 - `parse.ts` / `paths.ts` 保持纯逻辑，可脱离 Electron 单测
 
 **IPC 通道**（白名单，仅这些）
 
 | 通道 | 说明 |
 |---|---|
-| `skills:info` | 平台与各根目录路径 |
+| `skills:info` | 平台、各位置路径、应用数据目录、回收站目录 |
 | `skills:list` / `skills:refresh` | 读快照 / 强制重扫后返回 |
 | `skills:readFile` | 读 skill 内文件（**防路径越界**，`..` 拒绝） |
-| `skills:setEnabled` | 启停（移动） |
-| `skills:copyTo` | 分发到其它位置 |
-| `skills:delete` | 物理删除 |
-| `skills:revealInFinder` | 在 Finder 中显示 |
+| `skills:link` / `skills:unlink` | 建链 / 删链（位置标识过白名单） |
+| `skills:delete` | 删除 = 内容本体移入回收站，各位置软链直接删 |
+| `trash:list` / `trash:restore` / `trash:purge` / `trash:empty` / `trash:reveal` | 回收站清单与操作 |
+| `skills:revealInFinder` / `skills:openPath` | 在 Finder 中显示 / 打开存储位置 |
 | `skills:changed` | 主进程 → 渲染进程的变更广播 |
 | `settings:get` / `settings:save` / `settings:pickDirectory` | 配置与原生目录选择器 |
 
@@ -167,23 +143,28 @@ Codex 自带的 6 个系统 skill。始终为启用态，**锁定**：不可停�
   "sourceRoots": {
     "claude": "/Users/you/.claude/skills",
     "codex": "/Users/you/.codex/skills",
-    "opencode": "/Users/you/.config/opencode/skills"
+    "opencode": "/Users/you/.config/opencode/skills",
+    "agents": "/Users/you/.agents/skills"
   },
-  "disabledRoot": "/Users/you/Library/Application Support/skillsdeck/disabled",
-  "closeBehavior": "ask"
+  "closeBehavior": "ask",
+  "menu": {
+    "order": [],
+    "hidden": []
+  }
 }
 ```
 
+- `sourceRoots`：四个存储位置，可在设置页改址
 - `closeBehavior`：`ask`（每次询问）/ `tray`（最小化到菜单栏）/ `quit`（直接退出）
-- 应用数据目录（存 config 的位置）**固定**；`disabledRoot` 可改址
-- 也可通过设置界面修改，保存后立即重扫生效
+- `menu`：侧边栏菜单的排序与显隐（在设置页拖拽排序、开关显隐）。`order` 为菜单项 id 数组（未列出的按默认顺序补齐），`hidden` 为隐藏项；非法 id 读取时自动过滤。常驻项「总览 / 回收站」不参与配置
+- 应用数据目录（存 config 与回收站的位置）**固定**；设置界面**修改即自动保存**，路径变化后立即重扫生效
 
 **路径解析优先级**：环境变量 > `config.json` > 内置默认。环境变量便于测试隔离与可移植安装：
 
 ```
-SKILLSDECK_SOURCE_ROOT_CLAUDE / _CODEX / _OPENCODE
-SKILLSDECK_DISABLED_ROOT
-SKILLSDECK_MANAGED_ROOT
+SKILLSDECK_SOURCE_ROOT_CLAUDE / _CODEX / _OPENCODE / _AGENTS
+SKILLSDECK_MANAGED_ROOT           # 应用数据目录
+SKILLSDECK_TRASH_ROOT             # 回收站目录
 ```
 
 ---
@@ -194,20 +175,28 @@ SKILLSDECK_MANAGED_ROOT
 npm install
 npm run dev          # 开发模式（HMR）
 npm run build        # 构建到 out/
-npm run typecheck    # tsc --noEmit（node + web 两套配置）
-npm test             # 58 项单元 / 集成测试
+npm run typecheck    # tsc --noEmit（node / web / e2e 三套配置）
+npm test             # vitest run
+npm run test:e2e     # build + Playwright Electron E2E
 npm run dist         # 打包 DMG + zip → release/<version>/
 ```
 
-**测试**（`tests/`）覆盖纯逻辑与真实目录集成：
+**测试**（`tests/`）
+
+没有开发者的允许，不能主动进行测试
+
+全部使用临时目录 + 环境变量隔离，不触碰本机真实数据：
 
 | 文件 | 覆盖 |
 |---|---|
 | `parse.test.ts` | frontmatter 拆分（BOM/CRLF/空/内联 `---`）、字段回退、文件归类 |
-| `paths.test.ts` | id 构造、源目录与停车场隔离 |
-| `config.test.ts` | 配置读写、非法值回退、损坏文件容错、env 优先级 |
-| `store.test.ts` | 启停移动、同名跨源不冲突、冲突中止不破坏两侧、软链只动链接、共享真身互不干扰、复制四种冲突策略、解引用复制、删除、路径越界拒绝 |
-| `scanner.test.ts` | 本机真实目录集成：软链识别、`.system` 内置、id 唯一 |
+| `paths.test.ts` | id 构造、四个位置默认目录、回收站默认位置、配置覆盖与环境变量优先 |
+| `config.test.ts` | 配置读写、缺失字段回落、非法值回退、损坏文件容错、菜单项过滤 |
+| `scanner.test.ts` | 按内容归并（本体 + 软链）、同名不同内容互相占用、内容在应用之外、内置 native、断链残骸、id 唯一 |
+| `store.test.ts` | 建链/删链幂等、占用中止不破坏两侧、断链替换、删除（内容进回收站、软链直接删）与恢复、恢复冲突拒绝、彻底删除与清空、路径越界拒绝 |
+| `views.test.ts` | `use-skills.ts` 纯函数的视图归属与可用判定 |
+
+Electron E2E 在 `e2e/`（Playwright `_electron`）：每个用例 `mkdtemp` 沙箱，用 `SKILLSDECK_*` 环境变量隔离四个位置与回收站；**窗口从不显示**（夹具传 `SKILLSDECK_HEADLESS=1`，并有断言守卫），因此跑测试不会在屏幕上弹窗打扰别人；工件是 `playwright-report/`（HTML 报告）与 `e2e/artifacts/*.png`（关键步骤截图，用 CDP 直接抓渲染面，不依赖窗口可见）。
 
 ---
 
@@ -219,8 +208,10 @@ src/
 ├── main/
 │   ├── index.ts                 # 窗口 / 生命周期 / 关闭行为
 │   ├── ipc.ts                   # IPC 注册（写操作唯一入口）
-│   ├── store.ts                 # ★ 状态属主：索引 + 启停/复制/删除
-│   ├── scanner.ts               # 只读扫描（跟随软链）
+│   ├── store.ts                 # ★ 状态属主：索引 + 链接/删除/回收站操作
+│   ├── scanner.ts               # 只读扫描（按位置收条目 → 按真实路径归并）
+│   ├── trash.ts                 # 回收站落盘（移入 / 索引 / 恢复 / 彻底删除）
+│   ├── fsops.ts                 # 文件操作与退避重试
 │   ├── watcher.ts               # chokidar 监听 + 广播
 │   ├── paths.ts                 # 路径解析与覆盖
 │   ├── config.ts                # config.json
@@ -228,12 +219,14 @@ src/
 ├── preload/index.ts             # 按契约实现 window.api
 └── renderer/src/
     ├── App.tsx                  # 视图状态与编排
-    ├── hooks/use-skills.ts      # 数据订阅 + AGENT_SOURCES 映射
+    ├── hooks/use-skills.ts      # 数据订阅 + 视图/筛选 + AGENT_SOURCES
     ├── components/
-    │   ├── agent-icons.tsx      # 品牌图标（暗色反相）
+    │   ├── agent-icons.tsx      # 位置图标（品牌 SVG，缺失时回退通用图标）
     │   └── ui/                  # shadcn/ui
     └── features/skills/         # sidebar / view-header / skill-table
-                                 # skill-detail / dashboard / *-dialog
+                                 # skill-detail / dashboard / link-dialog
+                                 # trash-page / delete-dialog / settings-page
+                                 # menu-editor
 resources/tray-icon.png          # 托盘图标
 ```
 
@@ -241,8 +234,10 @@ resources/tray-icon.png          # 托盘图标
 
 ## 八、安全边界（不做的事）
 
-- **不跟随软链破坏真身**：删除/启停只作用于当前条目路径
+- **不跟随软链破坏真身**：链接/取消链接只作用于链接本体；删除本体时同名的**失效残骸**（属于别人）不牵连
 - **绝不静默覆盖**：任何写操作遇到目标已存在，一律中止并回报冲突路径
+- **恢复不覆盖**：回收站恢复时若原位置已被占用，中止并提示，绝不顶掉现成条目
+- **索引不可信**：回收站条目 id 与恢复目标都做校验（拒绝 `..`、拒绝落在四个位置之外的路径）
 - **拒绝路径越界**：`skills:readFile` 校验解析后路径必须落在 skill 目录内
-- **内置 skill 全锁**：`.system/` 不可停用、复制、删除
-- **删除不可撤销**，因此强制二次确认并如实说明后果
+- **内置 skill 全锁**：`.system/` 不可链接、复制、删除
+- **删除：内容进回收站，软链直接删**——软链删除后不可恢复，因此二次确认对话框如实写明每条去向；「彻底删除」与「清空回收站」同样不可撤销，一律强制二次确认并说明后果
